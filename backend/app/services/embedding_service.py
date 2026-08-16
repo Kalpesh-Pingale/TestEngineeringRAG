@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_CACHE: dict[str, List[float]] = {}
 
+# Loaded ONNX models, keyed by embedding version, shared by every
+# EmbeddingService instance in the process.
+#
+# Instances are cheap and created per request; the model behind them is not.
+# Caching per instance meant each request loaded its own ~90MB copy — invisible
+# on a dev machine, fatal on a small container, where a health check every few
+# seconds kept several loads in flight at once and the worker was killed.
+_MODEL_CACHE: dict[str, object] = {}
+_MODEL_LOAD_LOCK = asyncio.Lock()
+
 # Stamped onto every stored vector. If the active model no longer matches what
 # a vector was built with, that vector is not comparable and must be rebuilt.
 DEGRADED_EMBEDDING_VERSION = "degraded-hash-v1"
@@ -40,7 +50,6 @@ class EmbeddingService:
         self.model = model or settings.embedding_model
         self._model = None
         self._dimension: Optional[int] = None
-        self._load_lock = asyncio.Lock()
 
     # --- Identity (stamped onto vectors so mismatches are detectable) ---
 
@@ -55,12 +64,28 @@ class EmbeddingService:
     # --- Model loading ---
 
     async def _ensure_model(self):
+        """Bind this instance to the process-wide model, loading it if needed.
+
+        The lock is module-level, not per instance: concurrent requests each
+        hold their own EmbeddingService, so an instance lock would let them all
+        load simultaneously — the exact pile-up this is meant to prevent.
+        """
         if self._model is not None:
             return
-        async with self._load_lock:
-            if self._model is not None:
-                return
-            self._model = await asyncio.to_thread(self._load_model_sync)
+
+        key = self.embedding_version
+        cached = _MODEL_CACHE.get(key)
+        if cached is not None:
+            self._model = cached
+            return
+
+        async with _MODEL_LOAD_LOCK:
+            # Re-check: another request may have loaded it while we waited.
+            cached = _MODEL_CACHE.get(key)
+            if cached is None:
+                cached = await asyncio.to_thread(self._load_model_sync)
+                _MODEL_CACHE[key] = cached
+            self._model = cached
 
     def _load_model_sync(self):
         if self.provider != "fastembed":
