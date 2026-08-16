@@ -12,28 +12,28 @@ services:
   - type: web
     name: test-engineering-rag-api
     runtime: python
-    plan: starter # `free` also works, but has no persistent disk — see the note below
+    plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
 
-    # Persistent storage for the vector store and the downloaded ONNX model.
-    # Without this, every restart loses both: the model re-downloads (~90MB,
-    # slow first request) and the vector store is empty until a Full Sync.
-    # Render only offers disks on paid instance types; on `free`, delete this
-    # block and expect to re-run a Full Sync after each cold start.
-    disk:
-      name: rag-data
-      mountPath: /var/data
-      sizeGB: 1
+    # NOTE ON STORAGE (free plan)
+    # Render offers persistent disks only on paid instance types, so the paths
+    # below live on an ephemeral filesystem. The service also sleeps after
+    # ~15 minutes idle. Consequences, both expected rather than broken:
+    #   - the ~90MB ONNX model re-downloads on the first request after a wake
+    #   - the vector store is empty after a wake, until a Full Sync is re-run
+    # The vector store is rebuildable by design, so this costs time, not data.
+    # To make it persistent later: set `plan: starter`, add a `disk:` block
+    # mounted at /var/data, and point the two paths below at it.
 
     envVars:
-      # --- Storage (points at the mounted disk above) ---
+      # --- Storage (ephemeral on the free plan — see the note above) ---
       - key: CHROMA_DB_PATH
-        value: /var/data/chromadb
+        value: ./chromadb
       - key: FASTEMBED_CACHE_DIR
-        value: /var/data/model_cache
+        value: ./model_cache
 
       # --- CORS: must list the deployed frontend origin, or the browser
       #     blocks every API call. Comma-separated for several. ---
