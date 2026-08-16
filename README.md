@@ -323,6 +323,8 @@ Vercel functions are **serverless**: a read-only filesystem apart from an epheme
 
 **So: deploy the frontend on Vercel, and the backend on a host with a persistent disk and long-running processes** (Render, Railway, Fly.io, or any VM/container). This is the least-effort path and needs no code changes.
 
+[`render.yaml`](render.yaml) in the repo root is a ready-made blueprint for the backend half: **Render → New → Blueprint → pick this repo**. It sets the root directory, build and start commands, the health check, a 1GB disk mounted for `CHROMA_DB_PATH` and `FASTEMBED_CACHE_DIR`, and every non-secret variable. The secrets (`sync: false`) are prompted for in the dashboard.
+
 If the backend *must* be on Vercel, the vector store has to move to a hosted vector database (Qdrant Cloud, Pinecone, Supabase pgvector) and embeddings to a hosted API, with sync driven by a cron job rather than a request. That is a real rewrite of `vector_store.py` and `embedding_service.py`, not a config change.
 
 ### Frontend on Vercel

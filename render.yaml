@@ -1,0 +1,95 @@
+# Render blueprint for the FastAPI backend.
+#
+# The frontend is deployed separately on Vercel (root directory `frontend`).
+# This service is the piece Vercel cannot host: it writes the vector store to
+# disk, downloads a ~90MB ONNX embedding model, and runs syncs that take
+# minutes — none of which fit a serverless runtime.
+#
+# Use: Render dashboard → New → Blueprint → pick this repository.
+# Then set the secret values (marked `sync: false`) in the dashboard.
+
+services:
+  - type: web
+    name: test-engineering-rag-api
+    runtime: python
+    plan: starter # `free` also works, but has no persistent disk — see the note below
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+
+    # Persistent storage for the vector store and the downloaded ONNX model.
+    # Without this, every restart loses both: the model re-downloads (~90MB,
+    # slow first request) and the vector store is empty until a Full Sync.
+    # Render only offers disks on paid instance types; on `free`, delete this
+    # block and expect to re-run a Full Sync after each cold start.
+    disk:
+      name: rag-data
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      # --- Storage (points at the mounted disk above) ---
+      - key: CHROMA_DB_PATH
+        value: /var/data/chromadb
+      - key: FASTEMBED_CACHE_DIR
+        value: /var/data/model_cache
+
+      # --- CORS: must list the deployed frontend origin, or the browser
+      #     blocks every API call. Comma-separated for several. ---
+      - key: CORS_ORIGINS
+        sync: false # e.g. https://test-engineering-rag.vercel.app
+
+      # --- Jira ---
+      - key: JIRA_BASE_URL
+        sync: false
+      - key: JIRA_PROJECT_KEY
+        sync: false
+      - key: JIRA_EMAIL
+        sync: false
+      - key: JIRA_API_TOKEN
+        sync: false
+      - key: JIRA_USE_MCP
+        value: "false" # no MCP server runs alongside this deployment
+
+      # --- TestRail (optional) ---
+      - key: TESTRAIL_ENABLED
+        value: "false"
+      - key: TESTRAIL_BASE_URL
+        sync: false
+      - key: TESTRAIL_PROJECT_ID
+        sync: false
+      - key: TESTRAIL_SUITE_ID
+        sync: false
+      - key: TESTRAIL_SECTION_ID
+        sync: false
+      - key: TESTRAIL_USERNAME
+        sync: false
+      - key: TESTRAIL_API_KEY
+        sync: false
+
+      # --- LLM ---
+      - key: LLM_PROVIDER
+        value: groq
+      - key: LLM_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_API_KEY
+        sync: false
+
+      # --- Embeddings ---
+      - key: EMBEDDING_PROVIDER
+        value: fastembed
+      - key: EMBEDDING_MODEL
+        value: BAAI/bge-small-en-v1.5
+
+      # --- Sync / retrieval ---
+      - key: ENABLE_INCREMENTAL_SYNC
+        value: "true"
+      - key: CHUNK_SIZE
+        value: "800"
+      - key: CHUNK_OVERLAP
+        value: "150"
+      - key: TOP_K_RESULTS
+        value: "5"
+      - key: LOG_LEVEL
+        value: INFO
