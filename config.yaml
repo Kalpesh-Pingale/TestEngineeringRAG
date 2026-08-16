@@ -1,0 +1,65 @@
+# =============================================================================
+# NOT READ BY THE APPLICATION.
+#
+# No code loads this file and PyYAML is not a dependency. It is retained as a
+# design sketch for the settings a future multi-project configuration would
+# carry (see RAG_PRODUCTION_ROADMAP.md, Phase 3).
+#
+# All live configuration is in backend/.env — editing values here has no effect.
+# =============================================================================
+
+jira:
+  project_key: SCRUM
+  issue_types:
+    - Story
+    - Bug
+  fields:
+    - summary
+    - description
+    - acceptanceCriteria
+    - priority
+    - labels
+    - components
+    - sprint
+    - status
+
+sync:
+  mode: incremental
+  change_detection:
+    timestamp: true
+    hash: true
+    delete_detection: true
+
+vector_db:
+  provider: local_files          # vectors.npy + metadata.jsonl under backend/chromadb/
+  collection: jira_knowledge
+
+embedding:
+  provider: fastembed            # local ONNX; changing the model requires a Full Sync
+  model: BAAI/bge-small-en-v1.5
+  dimension: 384
+
+retrieval:
+  # Context chunks pulled from OTHER issues. The target issue's own chunks are
+  # always fetched in full by exact key match, never by similarity.
+  top_k: 5
+
+test_generation:
+  generate_manual: true
+  generate_api: true
+  generate_ui: true
+  generate_regression: true
+  # Test types to include
+  include_types:
+    - Positive
+    - Negative
+    - Boundary Value
+    - Edge Cases
+    - API Scenarios
+    - UI Scenarios
+    - Exploratory
+    - Non-functional
+
+testrail:
+  auto_upload: true
+  default_section_id: 1

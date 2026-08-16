@@ -1,0 +1,912 @@
+<title>Test Engineering RAG Platform — Technical Overview</title>
+<style>
+  :root {
+    --ink: #14171c;
+    --paper: #f2f4f3;
+    --paper-raised: #e9ece9;
+    --line: #c7ccc9;
+    --line-soft: #dcdfdb;
+    --slate: #5b6460;
+    --slate-dim: #7c837f;
+    --amber: #c6741b;
+    --amber-soft: #f0dcc4;
+    --amber-wash: #faf3ea;
+    --teal: #1e8a82;
+    --teal-soft: #cde6e2;
+    --teal-wash: #eaf5f3;
+    --good: #2f7a4f;
+    --warn: #b5891a;
+    --shadow: 0 1px 2px rgba(20,23,28,0.06), 0 8px 24px -12px rgba(20,23,28,0.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #eceeec;
+      --paper: #14171a;
+      --paper-raised: #1b1f22;
+      --line: #33393c;
+      --line-soft: #262b2e;
+      --slate: #9aa3a0;
+      --slate-dim: #767f7c;
+      --amber: #e0954a;
+      --amber-soft: #3a2c1a;
+      --amber-wash: #211a10;
+      --teal: #4db8ae;
+      --teal-soft: #16302d;
+      --teal-wash: #101f1d;
+      --good: #4fa876;
+      --warn: #d1a53f;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #eceeec;
+    --paper: #14171a;
+    --paper-raised: #1b1f22;
+    --line: #33393c;
+    --line-soft: #262b2e;
+    --slate: #9aa3a0;
+    --slate-dim: #767f7c;
+    --amber: #e0954a;
+    --amber-soft: #3a2c1a;
+    --amber-wash: #211a10;
+    --teal: #4db8ae;
+    --teal-soft: #16302d;
+    --teal-wash: #101f1d;
+    --good: #4fa876;
+    --warn: #d1a53f;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0 20px 100px;
+  }
+
+  .doc {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  /* ---------- Type scale ---------- */
+  .serif {
+    font-family: Charter, "Iowan Old Style", Georgia, Cambria, "Times New Roman", serif;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, "Liberation Mono", monospace;
+  }
+
+  h1, h2, h3, h4 { font-family: Charter, "Iowan Old Style", Georgia, Cambria, "Times New Roman", serif; text-wrap: balance; margin: 0; }
+  p { text-wrap: pretty; }
+
+  /* ---------- Masthead ---------- */
+  .masthead {
+    padding: 64px 0 40px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--amber);
+    font-weight: 600;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 22px;
+    height: 1.5px;
+    background: var(--amber);
+    display: inline-block;
+  }
+  h1.title {
+    font-size: clamp(32px, 5vw, 44px);
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    max-width: 15ch;
+  }
+  .subtitle {
+    margin-top: 18px;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--slate);
+    max-width: 56ch;
+  }
+  .meta-row {
+    margin-top: 28px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    font-size: 13px;
+    color: var(--slate-dim);
+  }
+  .meta-row span { font-family: ui-monospace, "SF Mono", Consolas, monospace; color: var(--slate); }
+
+  /* ---------- Section rhythm ---------- */
+  section.block {
+    padding: 56px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  section.block:last-of-type { border-bottom: none; }
+
+  .section-label {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--slate-dim);
+    margin-bottom: 14px;
+  }
+  h2.section-title {
+    font-size: 27px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    margin-bottom: 14px;
+  }
+  .section-intro {
+    font-size: 16.5px;
+    color: var(--slate);
+    max-width: 62ch;
+    margin-bottom: 8px;
+  }
+
+  /* ---------- One-sentence callout ---------- */
+  .thesis {
+    margin: 44px 0 0;
+    padding: 28px 30px;
+    background: var(--paper-raised);
+    border-left: 3px solid var(--amber);
+    border-radius: 2px;
+  }
+  .thesis p {
+    font-family: Charter, Georgia, serif;
+    font-size: 19px;
+    line-height: 1.55;
+    margin: 0;
+    color: var(--ink);
+  }
+  .thesis .tag {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  /* ---------- Diagram ---------- */
+  figure.diagram {
+    margin: 36px 0 0;
+    padding: 0;
+  }
+  figure.diagram svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  figure.diagram figcaption {
+    margin-top: 14px;
+    font-size: 13.5px;
+    color: var(--slate);
+    line-height: 1.6;
+  }
+  figure.diagram figcaption .k-amber { color: var(--amber); font-weight: 600; }
+  figure.diagram figcaption .k-teal { color: var(--teal); font-weight: 600; }
+
+  /* ---------- Quick reference table ---------- */
+  .stack-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 24px;
+    font-size: 14.5px;
+  }
+  .stack-table th {
+    text-align: left;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--slate-dim);
+    font-weight: 600;
+    padding: 0 14px 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .stack-table td {
+    padding: 14px 14px 14px 0;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  .stack-table tr:last-child td { border-bottom: none; }
+  .stack-table .layer {
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  .stack-table .tool {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 13.5px;
+    color: var(--amber);
+    white-space: nowrap;
+  }
+  .stack-table .tool.teal { color: var(--teal); }
+  .stack-table .role { color: var(--slate); }
+
+  /* ---------- Deep dive cards ---------- */
+  .spec-card {
+    margin-top: 40px;
+    padding: 26px 28px 28px;
+    background: var(--paper-raised);
+    border-radius: 6px;
+    border: 1px solid var(--line-soft);
+  }
+  .spec-card:first-of-type { margin-top: 30px; }
+  .spec-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .spec-name {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--amber);
+  }
+  .spec-name.teal { color: var(--teal); }
+  .spec-role {
+    font-size: 12.5px;
+    color: var(--slate-dim);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  .spec-body p {
+    font-size: 15px;
+    color: var(--ink);
+    margin: 10px 0 0;
+    line-height: 1.65;
+  }
+  .spec-why {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--line);
+    font-size: 14px;
+    color: var(--slate);
+  }
+  .spec-why b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- Alternatives table ---------- */
+  .alt-wrap { overflow-x: auto; margin-top: 16px; }
+  table.alt-table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  .alt-table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--slate-dim);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0 16px 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .alt-table td {
+    padding: 11px 16px 11px 0;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--slate);
+    vertical-align: top;
+  }
+  .alt-table tr:last-child td { border-bottom: none; }
+  .alt-table .chosen td { color: var(--ink); }
+  .alt-table .name { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .pill {
+    display: inline-block;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    margin-left: 8px;
+    vertical-align: 1px;
+  }
+  .pill.chosen { background: var(--amber-soft); color: var(--amber); }
+  .pill.chosen.teal { background: var(--teal-soft); color: var(--teal); }
+
+  /* ---------- Numbered request flow ---------- */
+  .flow-list { margin-top: 24px; display: flex; flex-direction: column; gap: 0; }
+  .flow-item {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .flow-item:last-child { border-bottom: none; }
+  .flow-num {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--paper);
+    background: var(--teal);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .flow-text b { font-weight: 600; }
+  .flow-text .note { display: block; margin-top: 3px; font-size: 13.5px; color: var(--slate); }
+
+  /* ---------- Glossary ---------- */
+  .gloss-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin-top: 24px;
+  }
+  .gloss-item {
+    display: grid;
+    grid-template-columns: minmax(120px, 160px) 1fr;
+    gap: 20px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .gloss-item:last-child { border-bottom: none; }
+  .gloss-term {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--teal);
+  }
+  .gloss-def { font-size: 14.5px; color: var(--slate); line-height: 1.6; }
+  .gloss-def em { color: var(--ink); font-style: normal; font-weight: 600; }
+
+  /* ---------- Verdict callout ---------- */
+  .verdict {
+    margin-top: 40px;
+    padding: 26px 28px;
+    background: var(--teal-wash);
+    border: 1px solid var(--teal-soft);
+    border-radius: 6px;
+  }
+  .verdict .tag { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal); font-weight: 700; margin-bottom: 10px; display: block; }
+  .verdict p { font-size: 15px; color: var(--ink); margin: 0 0 10px; line-height: 1.65; }
+  .verdict p:last-child { margin-bottom: 0; }
+  .verdict ul { margin: 10px 0 0; padding-left: 20px; }
+  .verdict li { font-size: 14.5px; color: var(--slate); margin-bottom: 6px; line-height: 1.55; }
+  .verdict li em { color: var(--ink); font-style: normal; font-weight: 600; }
+
+  /* ---------- Footer ---------- */
+  .doc-footer {
+    padding: 44px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12.5px;
+    color: var(--slate-dim);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+
+  @media (max-width: 600px) {
+    .gloss-item { grid-template-columns: 1fr; gap: 4px; }
+    .spec-card { padding: 20px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; }
+  }
+</style>
+
+<div class="doc">
+
+  <header class="masthead">
+    <div class="eyebrow">Internal technical overview</div>
+    <h1 class="title">What's under the hood of the Test Engineering RAG Platform</h1>
+    <p class="subtitle">A plain-language walkthrough of every tool in the stack — what it is, why it was chosen over the obvious alternative, and what it would cost to swap out. Written to be read once and then handed to teammates.</p>
+    <div class="meta-row">
+      <div>Stack size: <span>~12 components</span></div>
+      <div>Hosting: <span>runs locally, no cloud infra required</span></div>
+      <div>External services: <span>Jira · TestRail · Groq</span></div>
+    </div>
+  </header>
+
+  <!-- ================= WHAT IT IS ================= -->
+  <section class="block">
+    <div class="section-label">01 — What this actually is</div>
+    <h2 class="section-title">A tool that reads Jira, remembers it, and writes tests</h2>
+    <p class="section-intro">
+      The platform pulls user stories and defects out of Jira, converts them into a searchable local index, and uses that
+      index — plus a language model — to draft test cases, which can then be pushed into TestRail. The "RAG" in the name
+      stands for <b>Retrieval-Augmented Generation</b>: before the AI writes anything, the system retrieves the most
+      relevant background material and hands it over first, instead of asking the AI to work from memory alone.
+    </p>
+
+    <div class="thesis">
+      <span class="tag">In one sentence</span>
+      <p>It separates <b>reading Jira</b> (slow, done occasionally) from <b>writing tests</b> (fast, done constantly) —
+      so every test-generation request works off a local, searchable copy of your project's history instead of calling
+      out to Jira every single time.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 980 460" role="img" aria-label="Two-lane diagram: an amber INDEX path runs Jira through the backend into local vector storage occasionally; a teal GENERATE path runs a UI request through the backend, the vector store, and the Groq LLM to produce test cases, which are saved to TestRail and shown to the user.">
+        <defs>
+          <marker id="arrowAmber" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <polygon points="0,0 7,3 0,6" fill="var(--amber)"/>
+          </marker>
+          <marker id="arrowTeal" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <polygon points="0,0 7,3 0,6" fill="var(--teal)"/>
+          </marker>
+        </defs>
+
+        <!-- lane labels -->
+        <text x="0" y="28" font-family="ui-monospace, Consolas, monospace" font-size="11" letter-spacing="1.2" fill="var(--amber)" font-weight="700">INDEX — RUNS OCCASIONALLY</text>
+        <text x="0" y="260" font-family="ui-monospace, Consolas, monospace" font-size="11" letter-spacing="1.2" fill="var(--teal)" font-weight="700">GENERATE — RUNS ON EVERY REQUEST</text>
+        <line x1="0" y1="238" x2="980" y2="238" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4"/>
+
+        <!-- ===== INDEX LANE ===== -->
+        <!-- Jira box -->
+        <rect x="0" y="50" width="150" height="72" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="75" y="82" text-anchor="middle" font-family="Charter, Georgia, serif" font-size="15" font-weight="600" fill="currentColor">Jira</text>
+        <text x="75" y="101" text-anchor="middle" font-family="ui-monospace, Consolas, monospace" font-size="10.5" fill="var(--slate)">stories · defects</text>
+
+        <line x1="150" y1="86" x2="266" y2="86" stroke="var(--amber)" stroke-width="1.6" marker-end="url(#arrowAmber)"/>
+        <text x="208" y="76" text-anchor="middle" font-size="10.5" fill="var(--amber)">fetch + chunk</text>
+
+        <!-- Backend box (index lane portion) -->
+        <rect x="270" y="50" width="180" height="72" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="360" y="82" text-anchor="middle" font-family="Charter, Georgia, serif" font-size="15" font-weight="600" fill="currentColor">FastAPI backend</text>
+        <text x="360" y="101" text-anchor="middle" font-family="ui-monospace, Consolas, monospace" font-size="10.5" fill="var(--slate)">chunker + embedder</text>
+
+        <line x1="450" y1="86" x2="646" y2="86" stroke="var(--amber)" stroke-width="1.6" marker-end="url(#arrowAmber)"/>
+        <text x="548" y="76" text-anchor="middle" font-size="10.5" fill="var(--amber)">embed, write once</text>
+
+        <!-- Vector store box -->
+        <rect x="650" y="50" width="180" height="72" rx="6" fill="none" stroke="var(--amber)" stroke-width="1.8"/>
+        <text x="740" y="82" text-anchor="middle" font-family="Charter, Georgia, serif" font-size="15" font-weight="600" fill="currentColor">Vector store</text>
+        <text x="740" y="101" text-anchor="middle" font-family="ui-monospace, Consolas, monospace" font-size="10.5" fill="var(--slate)">local files, on disk</text>
+
+        <!-- ===== GENERATE LANE ===== -->
+        <!-- UI box -->
+        <rect x="0" y="280" width="150" height="72" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="75" y="312" text-anchor="middle" font-family="Charter, Georgia, serif" font-size="15" font-weight="600" fill="currentColor">React UI</text>
+        <text x="75" y="331" text-anchor="middle" font-family="ui-monospace, Consolas, monospace" font-size="10.5" fill="var(--slate)">the team, in a browser</text>
+
+        <line x1="150" y1="316" x2="266" y2="316" stroke="var(--teal)" stroke-width="1.6" marker-end="url(#arrowTeal)"/>
+        <text x="208" y="306" text-anchor="middle" font-size="10.5" fill="var(--teal)">"test ISSUE-123"</text>
+
+        <!-- Backend box (generate lane portion) -->
+        <rect x="270" y="280" width="180" height="72" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="360" y="312" text-anchor="middle" font-family="Charter, Georgia, serif" font-size="15" font-weight="600" fill="currentColor">FastAPI backend</text>
+        <text x="360" y="331" text-anchor="middle" font-family="ui-monospace, Consolas, monospace" font-size="10.5" fill="var(--slate)">retrieval + prompting</text>
+
+        <!-- backend <-> vector store round trip -->
+        <line x1="400" y1="280" x2="700" y2="130" stroke="var(--teal)" stroke-width="1.6" marker-end="url(#arrowTeal)"/>
+        <text x="590" y="196" text-anchor="middle" font-size="10.5" fill="var(--teal)" transform="rotate(-31 590 196)">search (embed the query)</text>
+
+        <line x1="740" y1="122" x2="440" y2="278" stroke="var(--teal)" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#arrowTeal)"/>
+        <text x="600" y="235" text-anchor="middle" font-size="10.5" fill="var(--teal)" transform="rotate(-31 600 235)">top-5 relevant chunks</text>
+
+        <!-- backend -> LLM -->
+        <line x1="450" y1="316" x2="646" y2="316" stroke="var(--teal)" stroke-width="1.6" marker-end="url(#arrowTeal)"/>
+        <text x="548" y="306" text-anchor="middle" font-size="10.5" fill="var(--teal)">prompt + chunks</text>
+
+        <!-- LLM box -->
+        <rect x="650" y="280" width="180" height="72" rx="6" fill="none" stroke="var(--teal)" stroke-width="1.8"/>
+        <text x="740" y="312" text-anchor="middle" font-family="Charter, Georgia, serif" font-size="15" font-weight="600" fill="currentColor">Groq (LLM)</text>
+        <text x="740" y="331" text-anchor="middle" font-family="ui-monospace, Consolas, monospace" font-size="10.5" fill="var(--slate)">writes the test cases</text>
+
+        <!-- LLM -> TestRail -->
+        <line x1="740" y1="352" x2="740" y2="410" stroke="var(--teal)" stroke-width="1.6" marker-end="url(#arrowTeal)"/>
+        <text x="800" y="384" text-anchor="middle" font-size="10.5" fill="var(--teal)">save (optional)</text>
+        <rect x="650" y="410" width="180" height="50" rx="6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="740" y="440" text-anchor="middle" font-family="Charter, Georgia, serif" font-size="14" font-weight="600" fill="currentColor">TestRail</text>
+
+        <!-- backend -> UI results (return path) -->
+        <path d="M 360 352 L 360 400 L 75 400 L 75 352" fill="none" stroke="var(--teal)" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#arrowTeal)"/>
+        <text x="217" y="416" text-anchor="middle" font-size="10.5" fill="var(--teal)">show results</text>
+      </svg>
+      <figcaption>
+        <span class="k-amber">Amber</span> — the indexing path: Jira is read, chunked, and embedded into the local vector
+        store. This runs occasionally (on demand or on a schedule), not per request.
+        <span class="k-teal">Teal</span> — the generation path: every test-generation request searches the already-built
+        vector store, sends only the relevant pieces to the LLM, and returns test cases. No Jira call happens in this path.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= QUICK REFERENCE ================= -->
+  <section class="block">
+    <div class="section-label">02 — Quick reference</div>
+    <h2 class="section-title">The stack, at a glance</h2>
+    <p class="section-intro">The table to screenshot for the team chat.</p>
+
+    <table class="stack-table">
+      <thead>
+        <tr><th>Layer</th><th>Tool</th><th>Role</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="layer">Backend API</td><td class="tool">FastAPI (Python)</td><td class="role">Serves the REST API, orchestrates sync + retrieval + generation</td></tr>
+        <tr><td class="layer">Frontend</td><td class="tool">React + TypeScript</td><td class="role">The dashboard the team uses — sync, search, generate, review</td></tr>
+        <tr><td class="layer">Styling</td><td class="tool">Tailwind CSS</td><td class="role">Design system for the dashboard UI</td></tr>
+        <tr><td class="layer">Vector store</td><td class="tool teal">Custom (numpy + files)</td><td class="role">Stores and searches the "fingerprints" of every Jira issue</td></tr>
+        <tr><td class="layer">Embedding model</td><td class="tool teal">fastembed — bge-small-en-v1.5</td><td class="role">Turns text into the searchable fingerprint (runs locally, no API)</td></tr>
+        <tr><td class="layer">Generation model</td><td class="tool">Groq — Llama 3.3 70B</td><td class="role">Reads the retrieved context and writes the test cases</td></tr>
+        <tr><td class="layer">Jira access</td><td class="tool">REST API v3 (or MCP)</td><td class="role">Pulls stories, defects, and their fields into the pipeline</td></tr>
+        <tr><td class="layer">TestRail access</td><td class="tool">REST API (or MCP)</td><td class="role">Pushes generated test cases into the right project/section</td></tr>
+        <tr><td class="layer">Sync engine</td><td class="tool">Custom, hash-based</td><td class="role">Detects what changed in Jira so we don't re-index everything</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ================= BACKEND ================= -->
+  <section class="block">
+    <div class="section-label">03 — Application layer</div>
+    <h2 class="section-title">Backend &amp; frontend</h2>
+    <p class="section-intro">The parts of the system that would look familiar even without any AI involved.</p>
+
+    <div class="spec-card">
+      <div class="spec-head">
+        <span class="spec-name">FastAPI</span>
+        <span class="spec-role">Python · REST API</span>
+      </div>
+      <div class="spec-body">
+        <p>The backend is a Python web service. It exposes endpoints like <span class="mono">/api/sync/full</span> and
+        <span class="mono">/api/rag/generate-tests</span> that the dashboard calls. FastAPI was picked because it's the
+        standard choice for Python APIs that need to be fast to build and easy for a small team to maintain — it
+        auto-generates interactive API docs (visible at <span class="mono">/docs</span>) and validates every request/response
+        shape automatically via Pydantic.</p>
+      </div>
+      <div class="spec-why"><b>Nothing unusual here</b> — this is a conventional choice, not an AI-specific one. Any
+      Python-fluent engineer can read and extend it.</div>
+    </div>
+
+    <div class="spec-card">
+      <div class="spec-head">
+        <span class="spec-name">React + TypeScript</span>
+        <span class="spec-role">Frontend · dashboard</span>
+      </div>
+      <div class="spec-body">
+        <p>The four tabs the team actually uses — Sync, Vector DB, RAG Explorer, Test Generation — are a single-page React
+        app. TypeScript catches a category of bugs (wrong field name, wrong shape of data from the API) before they reach
+        a user. Styling is done with Tailwind CSS, a utility-first system that keeps the visual design consistent without
+        hand-writing a separate stylesheet per component.</p>
+      </div>
+      <div class="spec-why"><b>Worth knowing:</b> the <em style="color:var(--ink)">RAG Explorer</em> tab exists
+      specifically so anyone can see exactly what text was retrieved and what prompt was actually sent to the LLM — it's
+      the debugging window into the whole system.</div>
+    </div>
+  </section>
+
+  <!-- ================= VECTOR DB ================= -->
+  <section class="block">
+    <div class="section-label">04 — The memory</div>
+    <h2 class="section-title">Vector store — how "search by meaning" works</h2>
+    <p class="section-intro">
+      Traditional search matches keywords. This system needs to match <em>meaning</em> — "login fails" should find
+      "user cannot authenticate" even though they share almost no words. That requires converting text into numbers
+      first (see <em style="color:var(--ink)">Embedding model</em> below), then storing and searching those numbers.
+      That storage-and-search layer is the vector store.
+    </p>
+
+    <div class="spec-card">
+      <div class="spec-head">
+        <span class="spec-name teal">Custom local store</span>
+        <span class="spec-role">numpy array + JSON metadata, on disk</span>
+      </div>
+      <div class="spec-body">
+        <p>Rather than running a separate database process, this project stores every issue's fingerprint as rows in a
+        single file (<span class="mono">vectors.npy</span>) with a matching metadata file (<span class="mono">metadata.jsonl</span>).
+        Searching means comparing the query's fingerprint against every stored row — at this scale (a few thousand issues)
+        that takes about <b>2 milliseconds</b>, measured on this machine, with no server to install or keep running.</p>
+      </div>
+      <div class="spec-why"><b>Why not a "real" database?</b> Below about 50,000–100,000 stored chunks, a proper vector
+      database buys you nothing this project needs — no concurrent multi-user writes, no need to scale past one machine.
+      It would add a service to install, configure, and keep alive for no measurable benefit yet.</div>
+    </div>
+
+    <div class="alt-wrap">
+      <table class="alt-table">
+        <thead><tr><th>Option</th><th>What it is</th><th>Best fit</th></tr></thead>
+        <tbody>
+          <tr class="chosen">
+            <td class="name">This project <span class="pill chosen teal">in use</span></td>
+            <td>Hand-built file store (numpy + JSON)</td>
+            <td>Single machine, &lt;50k chunks, zero ops overhead</td>
+          </tr>
+          <tr>
+            <td class="name">ChromaDB</td>
+            <td>Embedded vector database, the most common starter choice</td>
+            <td>Similar scale, but wants a proper query API and metadata filters out of the box</td>
+          </tr>
+          <tr>
+            <td class="name">pgvector</td>
+            <td>A vector-search extension for Postgres</td>
+            <td>Teams already running Postgres who want vectors alongside normal relational data</td>
+          </tr>
+          <tr>
+            <td class="name">Qdrant / Weaviate</td>
+            <td>Purpose-built vector database servers</td>
+            <td>Real concurrency, millions of vectors, multiple applications sharing one store</td>
+          </tr>
+          <tr>
+            <td class="name">Pinecone</td>
+            <td>Fully managed, cloud-hosted vector database</td>
+            <td>No infrastructure to run at all, in exchange for a recurring bill and data leaving your network</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= EMBEDDING MODEL ================= -->
+  <section class="block">
+    <div class="section-label">05 — The fingerprint</div>
+    <h2 class="section-title">Embedding model — turning text into searchable numbers</h2>
+    <p class="section-intro">
+      This is the single most important — and most fragile — piece of the system. Get it wrong and every search result
+      degrades silently: nothing crashes, the numbers just stop meaning anything.
+    </p>
+
+    <div class="spec-card">
+      <div class="spec-head">
+        <span class="spec-name teal">fastembed — BAAI/bge-small-en-v1.5</span>
+        <span class="spec-role">runs locally · 384-dimension fingerprint · no API key</span>
+      </div>
+      <div class="spec-body">
+        <p>Every issue and every search query gets converted into a list of 384 numbers by this model. Two pieces of text
+        with a similar <em>meaning</em> produce similar number lists, which is what makes semantic search possible.
+        <span class="mono">fastembed</span> runs the model directly inside the Python process using ONNX (a lightweight
+        format for running trained models) — there's no server to start, no network call, and no per-request cost.</p>
+      </div>
+      <div class="spec-why"><b>The one hard rule:</b> changing this model invalidates every stored fingerprint —
+      old and new fingerprints aren't comparable, the way a ruler in centimeters can't be compared to one in inches.
+      The system now detects a mismatch automatically and blocks searches until a full re-index runs, rather than
+      quietly returning meaningless results.</div>
+    </div>
+
+    <div class="alt-wrap">
+      <table class="alt-table">
+        <thead><tr><th>Option</th><th>What it is</th><th>Trade-off</th></tr></thead>
+        <tbody>
+          <tr class="chosen">
+            <td class="name">fastembed <span class="pill chosen teal">in use</span></td>
+            <td>Local, in-process, no server</td>
+            <td>Free, private, works offline — slightly lower ceiling on quality than the largest hosted models</td>
+          </tr>
+          <tr>
+            <td class="name">Ollama + nomic-embed-text</td>
+            <td>Local, but needs its own background server running</td>
+            <td>What this project used originally — dropped because a required server that silently wasn't running is exactly
+            how this system's biggest bug happened</td>
+          </tr>
+          <tr>
+            <td class="name">OpenAI text-embedding-3</td>
+            <td>Hosted, called over the API</td>
+            <td>Strong quality, but Jira content leaves the network and every embed costs money per call</td>
+          </tr>
+          <tr>
+            <td class="name">Cohere Embed / Voyage AI</td>
+            <td>Hosted, purpose-built for retrieval quality</td>
+            <td>Similar trade-off to OpenAI — better for larger, quality-sensitive corpora</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= LLM ================= -->
+  <section class="block">
+    <div class="section-label">06 — The writer</div>
+    <h2 class="section-title">Generation model — the one that writes the actual test cases</h2>
+    <p class="section-intro">
+      This is a completely separate model from the embedding one above, and that separation matters: swapping this model
+      is a one-function change with zero effect on the stored vector data.
+    </p>
+
+    <div class="spec-card">
+      <div class="spec-head">
+        <span class="spec-name">Groq — Llama 3.3 70B</span>
+        <span class="spec-role">hosted API · OpenAI-compatible</span>
+      </div>
+      <div class="spec-body">
+        <p>Once the relevant Jira context has been retrieved, it's assembled into a prompt and sent to Groq, which serves
+        the open-source Llama 3.3 model at very high speed and low cost. The model reads the target issue plus a handful
+        of related issues, then returns test cases as structured JSON — title, steps, expected result, priority, type.</p>
+      </div>
+      <div class="spec-why"><b>Freely swappable:</b> Claude, GPT, or Gemini can replace Groq with a change confined to
+      one function. None of them requires touching the vector store, the sync engine, or anything upstream — generation
+      and retrieval are intentionally decoupled.</div>
+    </div>
+
+    <div class="alt-wrap">
+      <table class="alt-table">
+        <thead><tr><th>Option</th><th>What it is</th><th>Why you'd switch</th></tr></thead>
+        <tbody>
+          <tr class="chosen">
+            <td class="name">Groq <span class="pill chosen">in use</span></td>
+            <td>Hosted inference of open models (Llama, etc.)</td>
+            <td>Very fast, very cheap — good fit while output volume is high and stakes are moderate</td>
+          </tr>
+          <tr>
+            <td class="name">Anthropic Claude</td>
+            <td>Sonnet / Opus / Haiku family</td>
+            <td>Stronger reasoning on ambiguous or thin requirements — worth it when test quality matters more than cost</td>
+          </tr>
+          <tr>
+            <td class="name">OpenAI GPT</td>
+            <td>GPT-4-class models</td>
+            <td>Comparable case to Claude; often chosen for existing OpenAI tooling in a team</td>
+          </tr>
+          <tr>
+            <td class="name">Google Gemini</td>
+            <td>Gemini model family</td>
+            <td>Strong fit if the org is already standardized on Google Cloud</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= INTEGRATIONS ================= -->
+  <section class="block">
+    <div class="section-label">07 — Talking to Jira &amp; TestRail</div>
+    <h2 class="section-title">Two ways in, two ways out</h2>
+    <p class="section-intro">
+      Both integrations support a direct REST connection or an MCP server — a newer standard protocol for connecting AI
+      tools to external systems. Either works; MCP is optional infrastructure, not a requirement.
+    </p>
+
+    <div class="spec-card">
+      <div class="spec-head">
+        <span class="spec-name">Jira REST API v3</span>
+        <span class="spec-role">reads · email + API token</span>
+      </div>
+      <div class="spec-body">
+        <p>Pulls stories and bugs, along with summary, description, acceptance criteria, priority, and status. This is
+        the only path in — nothing else touches Jira.</p>
+      </div>
+    </div>
+
+    <div class="spec-card">
+      <div class="spec-head">
+        <span class="spec-name">TestRail REST API</span>
+        <span class="spec-role">writes · username + API key</span>
+      </div>
+      <div class="spec-body">
+        <p>Takes a generated set of test cases and creates them in the configured project and section. Entirely optional —
+        the system generates and displays test cases fine with this switched off, for teams that just want to review
+        and copy manually.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SYNC ENGINE ================= -->
+  <section class="block">
+    <div class="section-label">08 — Keeping the index fresh</div>
+    <h2 class="section-title">Sync engine — why it doesn't re-read everything every time</h2>
+    <p class="section-intro">
+      A full sync reads every story and defect once. Every sync after that is <em style="color:var(--ink)">incremental</em>:
+      it asks Jira only for issues updated since the last run, then compares a content hash against what's already
+      stored — if the hash matches, the issue is skipped entirely rather than re-embedded.
+    </p>
+    <div class="spec-card">
+      <div class="spec-body">
+        <p>Chunking is field-aware: description, acceptance criteria, and comments are split as separate pieces rather
+        than concatenated into one blob, and every piece is prefixed with the issue key and summary so it stays
+        identifiable on its own once it's stored.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= REQUEST FLOW ================= -->
+  <section class="block">
+    <div class="section-label">09 — Walking through one request</div>
+    <h2 class="section-title">What happens when someone clicks "Generate Tests"</h2>
+    <div class="flow-list">
+      <div class="flow-item">
+        <div class="flow-num">1</div>
+        <div class="flow-text"><b>The team enters an issue key</b>, e.g. <span class="mono">PROJ-123</span>, in the dashboard.<span class="note">No Jira call happens here — the issue must already be in the index.</span></div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">2</div>
+        <div class="flow-text"><b>The backend fetches that issue's own stored chunks by exact key match</b> — not by similarity.<span class="note">This guarantees the actual issue is in context, rather than hoping it ranks highly in a similarity search.</span></div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">3</div>
+        <div class="flow-text"><b>It also searches for related issues</b> by meaning, to give the model useful precedent.<span class="note">Labelled separately in the prompt as reference material, never as the spec to test.</span></div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">4</div>
+        <div class="flow-text"><b>Both go to Groq</b> in a single prompt with a strict instruction to return structured JSON.</div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">5</div>
+        <div class="flow-text"><b>The response is parsed into individual test cases</b> — one row per case, with title, steps, expected result, priority, and type.</div>
+      </div>
+      <div class="flow-item">
+        <div class="flow-num">6</div>
+        <div class="flow-text"><b>The team reviews, then optionally uploads to TestRail</b> with one click.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= GLOSSARY ================= -->
+  <section class="block">
+    <div class="section-label">10 — Plain-language glossary</div>
+    <h2 class="section-title">The five terms that unlock the rest</h2>
+    <div class="gloss-grid">
+      <div class="gloss-item">
+        <div class="gloss-term">RAG</div>
+        <div class="gloss-def"><em>Retrieval-Augmented Generation.</em> Look up the relevant background first, then ask the AI to answer using it — instead of relying on what the model already knows.</div>
+      </div>
+      <div class="gloss-item">
+        <div class="gloss-term">Embedding</div>
+        <div class="gloss-def">A numeric fingerprint of a piece of text. Similar meanings produce similar fingerprints, which is what makes "search by meaning" possible.</div>
+      </div>
+      <div class="gloss-item">
+        <div class="gloss-term">Vector / vector store</div>
+        <div class="gloss-def">A <em>vector</em> is the fingerprint itself — a list of numbers. A <em>vector store</em> is where thousands of these fingerprints are kept, built to quickly find the closest matches to a new one.</div>
+      </div>
+      <div class="gloss-item">
+        <div class="gloss-term">Chunk</div>
+        <div class="gloss-def">A bite-sized piece of a document. Long issues get split into chunks because retrieval and language models both work better on focused pieces than on one giant blob.</div>
+      </div>
+      <div class="gloss-item">
+        <div class="gloss-term">Token</div>
+        <div class="gloss-def">The unit AI usage is billed and measured in — roughly three-quarters of a word. "2,000 tokens" ≈ 1,500 words.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VERDICT ================= -->
+  <section class="block" style="border-bottom:none;">
+    <div class="section-label">11 — The honest answer</div>
+    <h2 class="section-title">Does all this actually save tokens?</h2>
+    <p class="section-intro">Worth stating plainly, because it's not a uniform "yes."</p>
+
+    <div class="verdict">
+      <span class="tag">Measured, not assumed</span>
+      <p>For generating tests on <em>one already-known issue</em>, this system is roughly break-even with a well-built
+      direct Jira call — most of the apparent savings people expect from "RAG" actually come from stripping Jira's raw
+      JSON down to clean text, which a well-implemented direct integration gets for free too.</p>
+      <p>Where it earns its place is anything that needs <em>many</em> issues at once, or data Jira doesn't hold at all:</p>
+      <ul>
+        <li><em>Defect prediction across a project or a portfolio</em> — retrieving the right 20 related defects instead of stuffing thousands of them into one request</li>
+        <li><em>Regression suite selection from TestRail</em> — matching by meaning against hundreds of existing cases</li>
+        <li><em>Cross-project analysis</em> — some of this genuinely does not fit in a single request without retrieval first</li>
+        <li><em>Reusing the team's own accepted test cases</em> as style examples — something a direct Jira call cannot do at any price, because that history doesn't live in Jira</li>
+      </ul>
+      <p>Aggregate questions — "which component has the most defects" — should never be answered by the language model
+      counting a retrieved sample. Those get computed directly from stored data; retrieval and the model are used only
+      for the parts that genuinely require judgment or similarity.</p>
+    </div>
+  </section>
+
+  <footer class="doc-footer">
+    <div>test-engineering-rag · internal doc</div>
+    <div>share freely with the team</div>
+  </footer>
+
+</div>
