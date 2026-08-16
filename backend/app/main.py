@@ -23,9 +23,23 @@ app = FastAPI(
 )
 
 # CORS
+#
+# Origins are normalised rather than used verbatim. A browser's Origin header
+# is scheme + host + port with no path, so a configured value carrying a
+# trailing slash — the natural thing to paste from a browser address bar —
+# matches nothing, and every request fails in the browser while curl still
+# works. Silent and slow to diagnose, so strip it here.
+def _parse_origins(raw: str) -> list[str]:
+    origins = [o.strip().rstrip("/") for o in raw.split(",")]
+    return [o for o in origins if o]
+
+
+allowed_origins = _parse_origins(settings.cors_origins)
+logger.info(f"CORS allowed origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
