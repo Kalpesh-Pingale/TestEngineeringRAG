@@ -85,7 +85,7 @@ TESTRAIL_API_KEY=your-api-key                          → TestRail API key
 | `EMBEDDING_PROVIDER` | `fastembed` — local ONNX, no server needed | No |
 | `EMBEDDING_MODEL` | Default `BAAI/bge-small-en-v1.5` (384-dim). **Changing this invalidates every stored vector** — the app detects the mismatch and requires a Full Sync | No |
 | `FASTEMBED_CACHE_DIR` | Where the ONNX model is cached (default `./model_cache`) | No |
-| `LLM_MODEL` | Groq model for generation (default `llama-3.3-70b-versatile`) | No |
+| `LLM_MODEL` | Groq model for generation (default `openai/gpt-oss-120b`). Groq retires models periodically — a `404 model_not_found` means the ID is gone; list current ones with `GET https://api.groq.com/openai/v1/models` | No |
 | `CORS_ORIGINS` | Comma-separated origins allowed to call the API (default `http://localhost:3000`) | Only when the frontend is not on localhost:3000 |
 
 ---

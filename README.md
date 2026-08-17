@@ -200,7 +200,7 @@ All live configuration is in **`backend/.env`**. Copy `backend/.env.example` to 
 | `FASTEMBED_CACHE_DIR` | Where the ONNX model is cached | `./model_cache` |
 | **LLM** | | |
 | `LLM_PROVIDER` | LLM provider | `groq` |
-| `LLM_MODEL` | Model for generation | `llama-3.3-70b-versatile` |
+| `LLM_MODEL` | Model for generation — must be a chat model your Groq key can access (`GET /openai/v1/models` lists them) | `openai/gpt-oss-120b` |
 | `GROQ_API_KEY` | Your Groq API key | *(from console.groq.com)* |
 | **Sync / retrieval** | | |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | Chunking parameters | `800` / `150` |

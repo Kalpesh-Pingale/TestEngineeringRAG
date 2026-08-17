@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # LLM
     llm_provider: str = "groq"
-    llm_model: str = "opengpt-oss-120b"
+    llm_model: str = "openai/gpt-oss-120b"
     groq_api_key: str = ""
 
     # Sync
