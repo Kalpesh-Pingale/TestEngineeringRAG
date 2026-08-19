@@ -8,6 +8,12 @@ An AI-powered Test Engineering Platform using **Jira** + **TestRail** + a local 
 > architecture diagram. A styled HTML version with the same content is at
 > [`docs/TECHNICAL_OVERVIEW.html`](docs/TECHNICAL_OVERVIEW.html) — open it in a browser.
 
+## Screenshots
+
+| Home | Vector DB | Test Generation |
+|---|---|---|
+| ![Home Page](docs/screenshots/HomePage.jpg) | ![Vector DB](docs/screenshots/Vector%20DB.jpg) | ![Test Generation](docs/screenshots/Test%20Generation.jpg) |
+
 ## Architecture
 
 ```
