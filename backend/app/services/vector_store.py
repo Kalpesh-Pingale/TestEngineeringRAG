@@ -1,125 +1,79 @@
-import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-import numpy as np
+import chromadb
+from chromadb.config import Settings as ChromaSettings
 
 from app.config import settings
 from app.models.rag import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
+COLLECTION_NAME = "jira_issues"
+
+# Shared across every VectorStore instance so repeated instantiations against the
+# same persist_dir (main.py, rag_service.py, sync_service.py, routers/vector_store.py
+# each construct their own) resolve to Chroma's cached client for that path instead
+# of opening competing connections.
+_CHROMA_SETTINGS = ChromaSettings(anonymized_telemetry=False)
+
 
 class VectorStore:
-    """Local file-based vector store with cosine similarity search.
+    """ChromaDB-backed vector store (embedded/persistent mode, no server process).
 
-    Vectors are stored as a single .npy matrix and metadata as JSONL. Writes are
-    explicit via flush() so a bulk sync performs one write instead of one write
-    per chunk.
+    Writes are batched: add_embedding() stages in memory and flush() performs one
+    collection.add() call, so a bulk sync still does one write instead of one per
+    chunk.
     """
 
     def __init__(self, persist_dir: str = ""):
         self.persist_dir = Path(persist_dir or settings.chroma_db_path)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
-        self.vectors_file = self.persist_dir / "vectors.npy"
-        self.legacy_file = self.persist_dir / "vectors.pkl"
-        self.metadata_file = self.persist_dir / "metadata.jsonl"
-        self._vectors: List[List[float]] = []
-        self._metadatas: List[Dict[str, Any]] = []
-        self._ids: List[str] = []
-        self._matrix: Optional[np.ndarray] = None  # normalized, built lazily
-        self._dirty = False
-        self._load()
+        self._client = chromadb.PersistentClient(
+            path=str(self.persist_dir), settings=_CHROMA_SETTINGS
+        )
+        self._pending_ids: List[str] = []
+        self._pending_vectors: List[List[float]] = []
+        self._pending_metadatas: List[Dict[str, Any]] = []
+
+    @property
+    def _collection(self):
+        """Re-resolved on every access rather than cached.
+
+        Another VectorStore instance in this process (e.g. sync_service mid Full
+        Sync) can delete and recreate the collection via clear_all(), which gets
+        a new Chroma-internal collection id. A cached handle would then point at
+        a deleted collection and every call would 404.
+        """
+        return self._client.get_or_create_collection(
+            name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
+        )
 
     # --- Persistence ---
 
-    def _load(self):
-        self._vectors, self._metadatas, self._ids = [], [], []
-        self._matrix = None
-
-        if self.metadata_file.exists():
-            with open(self.metadata_file, "r", encoding="utf-8") as f:
-                self._metadatas = [json.loads(line) for line in f if line.strip()]
-
-        if self.vectors_file.exists():
-            try:
-                self._vectors = np.load(self.vectors_file).tolist()
-            except Exception as e:
-                logger.warning(f"Failed to load {self.vectors_file}: {e}")
-        elif self.legacy_file.exists():
-            # Vectors written by the previous pickle-based format. Pickle can
-            # execute arbitrary code on load, so this path only exists to
-            # migrate old data forward and is not used for new writes.
-            logger.warning(
-                "Loading legacy vectors.pkl. It will be migrated to vectors.npy "
-                "on the next write."
-            )
-            try:
-                import pickle
-
-                with open(self.legacy_file, "rb") as f:
-                    self._vectors = pickle.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load legacy vector store: {e}")
-
-        if len(self._vectors) != len(self._metadatas):
-            logger.error(
-                f"Vector/metadata mismatch ({len(self._vectors)} vs "
-                f"{len(self._metadatas)}). Treating store as empty; run a Full Sync."
-            )
-            self._vectors, self._metadatas = [], []
-
-        self._ids = [
-            m.get("vector_id", f"v{i}") for i, m in enumerate(self._metadatas)
-        ]
-        if self._vectors:
-            logger.info(f"Loaded {len(self._vectors)} vectors from {self.persist_dir}")
-
     def flush(self):
-        """Write pending changes to disk. Call once after a batch of writes."""
-        if not self._dirty:
+        """Write staged additions. Call once after a batch of add_embedding()s."""
+        if not self._pending_ids:
             return
-        self.persist_dir.mkdir(parents=True, exist_ok=True)
-        arr = (
-            np.array(self._vectors, dtype=np.float32)
-            if self._vectors
-            else np.zeros((0, 0), dtype=np.float32)
+        self._collection.add(
+            ids=self._pending_ids,
+            embeddings=self._pending_vectors,
+            metadatas=self._pending_metadatas,
         )
-        # Write to a temp file then replace, so an interrupted write cannot
-        # leave vectors and metadata out of sync.
-        tmp_vec = self.vectors_file.parent / (self.vectors_file.name + ".tmp")
-        tmp_meta = self.metadata_file.parent / (self.metadata_file.name + ".tmp")
-        # Pass a file handle: np.save() appends ".npy" when given a path whose
-        # name does not already end in it, which would break the rename below.
-        with open(tmp_vec, "wb") as f:
-            np.save(f, arr)
-        with open(tmp_meta, "w", encoding="utf-8") as f:
-            for m in self._metadatas:
-                f.write(json.dumps(m) + "\n")
-        tmp_vec.replace(self.vectors_file)
-        tmp_meta.replace(self.metadata_file)
-
-        if self.legacy_file.exists():
-            self.legacy_file.unlink()
-            logger.info("Removed legacy vectors.pkl after migration")
-
-        self._dirty = False
+        self._pending_ids, self._pending_vectors, self._pending_metadatas = [], [], []
 
     def reload(self):
-        """Reload from disk, picking up changes made by another instance."""
-        self._load()
+        """No-op: _collection re-resolves on every access, nothing to refresh."""
 
     def clear_all(self):
-        self._vectors, self._metadatas, self._ids = [], [], []
-        self._matrix = None
-        self._dirty = True
-        self.flush()
+        self._pending_ids, self._pending_vectors, self._pending_metadatas = [], [], []
+        self._client.delete_collection(name=COLLECTION_NAME)
 
     @property
     def count(self) -> int:
-        return len(self._vectors)
+        return self._collection.count()
 
     # --- Embedding provenance ---
 
@@ -127,7 +81,7 @@ class VectorStore:
         """Distinct embedding versions present in the store."""
         return {
             m.get("embedding_version", "unknown")
-            for m in self._metadatas
+            for m in self.get_all_metadata()
             if m.get("embedding_version")
         }
 
@@ -138,7 +92,7 @@ class VectorStore:
         between them is meaningless — so a mismatch must block RAG queries
         rather than silently returning nonsense.
         """
-        if not self._vectors:
+        if self.count == 0:
             return {"compatible": True, "empty": True, "stored_versions": []}
 
         versions = self.embedding_versions()
@@ -174,11 +128,9 @@ class VectorStore:
     ) -> str:
         vid = doc_id or str(uuid.uuid4())
         metadata["vector_id"] = vid
-        self._vectors.append(vector)
-        self._metadatas.append(metadata)
-        self._ids.append(vid)
-        self._matrix = None
-        self._dirty = True
+        self._pending_ids.append(vid)
+        self._pending_vectors.append(vector)
+        self._pending_metadatas.append(metadata)
         if flush:
             self.flush()
         return vid
@@ -186,108 +138,82 @@ class VectorStore:
     def update_embedding(
         self, vector_id: str, vector: List[float], metadata: Dict[str, Any]
     ) -> bool:
-        if vector_id not in self._ids:
-            return False
-        idx = self._ids.index(vector_id)
-        self._vectors[idx] = vector
         metadata["vector_id"] = vector_id
-        self._metadatas[idx] = metadata
-        self._matrix = None
-        self._dirty = True
-        self.flush()
+        self._collection.upsert(
+            ids=[vector_id], embeddings=[vector], metadatas=[metadata]
+        )
         return True
 
     def delete_by_issue_key(self, issue_key: str, flush: bool = True) -> int:
-        indices = [
-            i for i, m in enumerate(self._metadatas) if m.get("issue_key") == issue_key
-        ]
-        for i in sorted(indices, reverse=True):
-            del self._vectors[i]
-            del self._metadatas[i]
-            del self._ids[i]
-        if indices:
-            self._matrix = None
-            self._dirty = True
-            if flush:
-                self.flush()
-        return len(indices)
+        existing = self._collection.get(
+            where={"issue_key": issue_key}, include=[]
+        )
+        ids = existing.get("ids", [])
+        if ids:
+            self._collection.delete(ids=ids)
+        return len(ids)
 
     # --- Reads ---
 
     def get_by_issue_key(self, issue_key: str) -> List[Dict[str, Any]]:
+        result = self._collection.get(
+            where={"issue_key": issue_key}, include=["metadatas"]
+        )
         return [
-            {"vector_id": self._ids[i], "metadata": m, "id": self._ids[i]}
-            for i, m in enumerate(self._metadatas)
-            if m.get("issue_key") == issue_key
+            {"vector_id": rid, "metadata": meta, "id": rid}
+            for rid, meta in zip(result.get("ids", []), result.get("metadatas", []))
         ]
-
-    def _normalized_matrix(self) -> np.ndarray:
-        """Cache the L2-normalized matrix so repeated searches skip the work."""
-        if self._matrix is None:
-            arr = np.array(self._vectors, dtype=np.float32)
-            norms = np.linalg.norm(arr, axis=1, keepdims=True)
-            self._matrix = arr / np.maximum(norms, 1e-10)
-        return self._matrix
 
     def similarity_search(
         self,
         query_vector: List[float],
         top_k: int = 5,
-        where: Optional[Callable[[Dict[str, Any]], bool]] = None,
-        exclude_ids: Optional[set] = None,
+        exclude_issue_key: Optional[str] = None,
     ) -> List[RetrievedChunk]:
-        """Cosine similarity search with an optional metadata filter.
+        """Cosine similarity search, optionally excluding one issue's own chunks.
 
-        `where` narrows the candidate set before ranking, which is what makes
-        issue-scoped retrieval possible (e.g. "only chunks for SCRUM-17").
+        `exclude_issue_key` is what makes issue-scoped context retrieval possible
+        (e.g. "similar chunks from issues other than SCRUM-17").
         """
-        if not self._vectors or top_k <= 0:
+        if self.count == 0 or top_k <= 0:
             return []
 
-        candidates = range(len(self._vectors))
-        if where is not None:
-            candidates = [i for i in candidates if where(self._metadatas[i])]
-        if exclude_ids:
-            candidates = [i for i in candidates if self._ids[i] not in exclude_ids]
-        candidates = list(candidates)
-        if not candidates:
-            return []
+        where = {"issue_key": {"$ne": exclude_issue_key}} if exclude_issue_key else None
+        n_results = min(top_k, self.count)
 
-        query = np.array(query_vector, dtype=np.float32)
-        query = query / max(float(np.linalg.norm(query)), 1e-10)
-
-        matrix = self._normalized_matrix()
-        if matrix.shape[1] != query.shape[0]:
-            raise ValueError(
-                f"Query vector has {query.shape[0]} dimensions but the store holds "
-                f"{matrix.shape[1]}-dimensional vectors. The embedding model changed — "
-                "run a Full Sync to rebuild."
+        try:
+            result = self._collection.query(
+                query_embeddings=[query_vector],
+                n_results=n_results,
+                where=where,
+                include=["metadatas", "distances"],
             )
+        except chromadb.errors.InvalidDimensionException as e:
+            raise ValueError(
+                f"Query vector dimension mismatch: {e}. The embedding model "
+                "changed — run a Full Sync to rebuild."
+            ) from e
 
-        sims = matrix[candidates] @ query
-        k = min(top_k, len(candidates))
-        # argpartition finds the top-k without fully sorting all N.
-        top_local = np.argpartition(-sims, k - 1)[:k]
-        top_local = top_local[np.argsort(-sims[top_local])]
+        metadatas = result.get("metadatas", [[]])[0]
+        distances = result.get("distances", [[]])[0]
 
         results = []
-        for local_idx in top_local:
-            idx = candidates[int(local_idx)]
-            meta = self._metadatas[idx]
+        for meta, distance in zip(metadatas, distances):
             results.append(
                 RetrievedChunk(
                     content=meta.get("content", ""),
                     issue_key=meta.get("issue_key", ""),
                     project_key=meta.get("project_key", ""),
                     issue_type=meta.get("issue_type", ""),
-                    similarity_score=float(sims[int(local_idx)]),
+                    similarity_score=1.0 - float(distance),
                     metadata=meta,
                 )
             )
         return results
 
     def get_all_metadata(self) -> List[Dict[str, Any]]:
-        return self._metadatas
+        result = self._collection.get(include=["metadatas"])
+        return result.get("metadatas", [])
 
     def get_issue_keys(self) -> set:
-        return {m.get("issue_key") for m in self._metadatas if m.get("issue_key")}
+        return {m.get("issue_key") for m in self.get_all_metadata() if m.get("issue_key")}

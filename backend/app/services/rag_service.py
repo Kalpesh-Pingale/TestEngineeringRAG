@@ -112,7 +112,7 @@ class RAGService:
             context_chunks = self.vector_store.similarity_search(
                 seed_vec,
                 top_k=context_k,
-                where=lambda m: m.get("issue_key") != issue_key,
+                exclude_issue_key=issue_key,
             )
 
         return target_chunks, context_chunks
@@ -188,12 +188,14 @@ Response:"""
 
     # --- LLM ---
 
-    async def _call_llm(self, prompt: str) -> tuple[str, int]:
+    async def _call_llm(
+        self, prompt: str, model: Optional[str] = None
+    ) -> tuple[str, int]:
         if not settings.groq_api_key:
             raise RAGError("GROQ_API_KEY is not configured. Set it in backend/.env")
 
         payload = {
-            "model": settings.llm_model,
+            "model": model or settings.llm_model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3,
             "max_tokens": 4096,
@@ -227,23 +229,65 @@ Response:"""
         )
         return content, data.get("usage", {}).get("total_tokens", 0)
 
+    async def list_models(self) -> List[dict]:
+        """Active Groq chat models this key can access, for the model picker.
+
+        Lets the user recover from a deprecated/misconfigured default model
+        (settings.llm_model) without editing backend/.env and restarting.
+        """
+        if not settings.groq_api_key:
+            raise RAGError("GROQ_API_KEY is not configured. Set it in backend/.env")
+
+        headers = {"Authorization": f"Bearer {settings.groq_api_key}"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    body = await resp.text()
+                    if not resp.ok:
+                        raise RAGError(
+                            f"Groq API error (HTTP {resp.status}): {body.strip()[:500]}"
+                        )
+                    data = await resp.json()
+        except RAGError:
+            raise
+        except Exception as e:
+            raise RAGError(f"Failed to list Groq models: {e}") from e
+
+        excluded = ("whisper", "tts", "distil-whisper")
+        return sorted(
+            (
+                {"id": m["id"], "context_window": m.get("context_window", 0)}
+                for m in data.get("data", [])
+                if m.get("active", True)
+                and not any(x in m["id"].lower() for x in excluded)
+            ),
+            key=lambda m: m["id"],
+        )
+
     # --- Public operations ---
 
-    async def generate_test_cases(self, issue_key: str) -> RAGResponse:
+    async def generate_test_cases(
+        self, issue_key: str, model: Optional[str] = None
+    ) -> RAGResponse:
         self._assert_store_usable()
 
         target_chunks, context_chunks = await self._retrieve_for_issue(
             issue_key, context_k=settings.top_k_results
         )
         prompt = self._build_test_prompt(issue_key, target_chunks, context_chunks)
-        response_text, tokens_used = await self._call_llm(prompt)
+        response_text, tokens_used = await self._call_llm(prompt, model=model)
 
-        # Baseline = the naive approach this system replaces: sending every
-        # indexed chunk to the LLM instead of only the relevant ones. Savings
-        # are zero until the corpus grows past top_k, which is expected.
-        all_meta = self.vector_store.get_all_metadata()
-        baseline = estimate_tokens(
-            "".join(m.get("content", "") for m in all_meta)
+        # Tentative baseline = the raw Jira payload size for this one issue, i.e.
+        # what a live MCP/REST fetch pasted straight into the prompt would cost.
+        # Zero until the issue has been (re)synced with raw_fetch_tokens captured.
+        baseline = (
+            target_chunks[0].metadata.get("raw_fetch_tokens", 0)
+            if target_chunks
+            else 0
         )
         retrieved = estimate_tokens(
             "".join(c.content for c in target_chunks + context_chunks)
@@ -255,12 +299,13 @@ Response:"""
             prompt_sent=prompt,
             generated_response=response_text,
             total_tokens_used=tokens_used,
+            model_used=model or settings.llm_model,
             target_chunk_count=len(target_chunks),
             context_chunk_count=len(context_chunks),
             baseline_tokens=baseline,
             retrieved_tokens=retrieved,
             tokens_saved=max(0, baseline - retrieved),
-            indexed_chunk_count=len(all_meta),
+            indexed_chunk_count=len(self.vector_store.get_all_metadata()),
         )
 
     async def similar_stories(self, issue_key: str, top_k: int = 5) -> RAGResponse:

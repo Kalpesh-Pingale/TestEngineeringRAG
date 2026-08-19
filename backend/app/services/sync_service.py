@@ -80,6 +80,7 @@ class SyncService:
                     "content": chunk.content,
                     "chunk_index": chunk.chunk_index,
                     "summary": issue.summary,
+                    "raw_fetch_tokens": issue.raw_fetch_tokens,
                 },
                 flush=False,
             )

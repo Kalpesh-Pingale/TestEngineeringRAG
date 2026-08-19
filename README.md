@@ -70,6 +70,8 @@ Measured on a real Jira issue: raw Jira JSON is ~2,046 tokens, the *clean extrac
 
 The durable value is capability, not cost: semantic search across projects, historical defect context, and reuse of previously accepted test cases — none of which a per-request Jira fetch can do. Output tokens (generating the tests themselves) dominate total spend and are unaffected by retrieval.
 
+**About the "Tokens Saved" stat on the Test Generation tab:** it compares what RAG actually sent (`retrieved_tokens`) against `baseline_tokens` — a *tentative* estimate of the raw, unprocessed Jira payload for that one issue, captured at sync time. That's a deliberately naive baseline (a live MCP/REST fetch pasted straight into the prompt with no cleanup), not the "clean extracted text" baseline this section uses above — a well-implemented MCP text tool would do meaningfully better than what this stat assumes, per the "20× reduction is mostly JSON stripping" point above. Treat it as an upper bound on savings for this one call, not a claim that RAG beats every reasonable alternative.
+
 ## Project Structure
 
 ```
@@ -90,7 +92,7 @@ The durable value is capability, not cost: semantic search across projects, hist
 │           ├── jira_service.py       # Jira data fetching (REST or MCP)
 │           ├── chunker.py            # Text chunking
 │           ├── embedding_service.py  # fastembed (local ONNX) — fails loudly
-│           ├── vector_store.py       # numpy-backed store, metadata filtering
+│           ├── vector_store.py       # embedded ChromaDB (PersistentClient), metadata filtering
 │           ├── sync_service.py       # Full/incremental sync engine
 │           ├── rag_service.py        # Two-stage RAG pipeline
 │           ├── test_generator.py     # JSON-first parsing of LLM output
@@ -283,8 +285,8 @@ Scope: the log lives in the browser, is capped at 100 entries, persists across r
 - **Embedding version stamping.** Every vector records its model; a mismatch blocks queries instead of returning meaningless similarity scores.
 - **Strict JSON output contract.** The LLM returns a JSON array parsed with `json.loads`; a prose parser remains only as a fallback. Reconstructing records from prose with regex collapses every test case into one paragraph when formatting drifts.
 - **Retrieved content is data, never instructions.** Jira descriptions are user-authored and untrusted — anyone who can file a ticket could otherwise inject directives into the prompt.
-- **File-based vector store.** `vectors.npy` + `metadata.jsonl`, written once per sync rather than once per chunk. Benchmarked at 1,800 chunks: 2.8 MB, 2.3 ms/query — no external database needed well past 10k chunks.
-- **Honest token accounting.** `baseline_tokens` / `retrieved_tokens` / `tokens_saved` are reported per call. Savings are legitimately zero when the corpus is smaller than `top_k`, and the API says so rather than manufacturing a number.
+- **Embedded ChromaDB.** `chromadb.PersistentClient` running in-process against `backend/chromadb/` — no separate server, same "no external database" property as before, just real ChromaDB indexing (cosine space) instead of a hand-rolled numpy+JSONL store. Writes are still batched — one `collection.add()` per sync, not one per chunk.
+- **Honest token accounting.** `baseline_tokens` / `retrieved_tokens` / `tokens_saved` are reported per test-generation call. `baseline_tokens` is a tentative per-issue estimate — the raw Jira payload size captured at sync time — not the whole corpus, and reads `0` for any issue synced before this field existed until it's re-synced.
 
 ## Secrets
 
@@ -323,7 +325,7 @@ Vercel functions are **serverless**: a read-only filesystem apart from an epheme
 
 | Feature | Conflict with Vercel serverless |
 |---|---|
-| File-based vector store (`backend/chromadb/vectors.npy`) | The filesystem is read-only, and `/tmp` is discarded between invocations — a Full Sync would write vectors that vanish before the next request |
+| Embedded ChromaDB (`backend/chromadb/chroma.sqlite3`) | The filesystem is read-only, and `/tmp` is discarded between invocations — a Full Sync would write vectors that vanish before the next request |
 | `fastembed` ONNX embeddings | `onnxruntime` plus the ~90MB model download is heavy for a serverless bundle and re-downloads on every cold start |
 | Full/incremental sync over a whole Jira project | Minutes of work against a function timeout |
 
@@ -423,7 +425,7 @@ No. Top-k retrieval selects by similarity to the query, so counting the selectio
 No. No code reads it and PyYAML is not a dependency. All live configuration is in `backend/.env`.
 
 **Where is data stored?**
-`backend/chromadb/` (`vectors.npy`, `metadata.jsonl`, `sync_metadata.json`). Both it and `backend/model_cache/` are gitignored and rebuildable via Full Sync.
+`backend/chromadb/` (`chroma.sqlite3` from the embedded ChromaDB client, plus `sync_metadata.json`). Both it and `backend/model_cache/` are gitignored and rebuildable via Full Sync.
 
 **Can I deploy the whole thing to Vercel?**
 The frontend, yes. The backend, not as it stands — it writes the vector store to disk, downloads a ~90MB ONNX model, and runs multi-minute syncs, none of which fit serverless. Host the backend where it has a persistent disk and put `REACT_APP_API_URL` in the Vercel project. See [Deployment](#deployment).

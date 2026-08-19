@@ -1,7 +1,6 @@
 import logging
 from fastapi import APIRouter, HTTPException
 
-from app.config import settings
 from app.models.rag import RAGQuery, RAGResponse
 from app.models.test_case import GeneratedTests
 from app.models.requests import TestGenerateRequest, SimilarRequest, SearchRequest
@@ -38,10 +37,18 @@ async def query_rag(query: RAGQuery):
         raise _handle(e)
 
 
+@router.get("/models")
+async def list_models():
+    try:
+        return await rag_service.list_models()
+    except Exception as e:
+        raise _handle(e)
+
+
 @router.post("/generate-tests", response_model=GeneratedTests)
 async def generate_tests(req: TestGenerateRequest):
     try:
-        rag_resp = await rag_service.generate_test_cases(req.issue_key)
+        rag_resp = await rag_service.generate_test_cases(req.issue_key, model=req.model)
         test_cases = test_generator.parse_rag_response(rag_resp)
         if not test_cases:
             raise RAGError(
@@ -52,7 +59,7 @@ async def generate_tests(req: TestGenerateRequest):
             issue_key=req.issue_key,
             test_cases=test_cases,
             total_count=len(test_cases),
-            model_used=settings.llm_model,
+            model_used=rag_resp.model_used,
             embedding_model=rag_service.embedder.model,
             target_chunk_count=rag_resp.target_chunk_count,
             context_chunk_count=rag_resp.context_chunk_count,

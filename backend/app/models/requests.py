@@ -9,6 +9,9 @@ class SyncRequest(BaseModel):
 
 class TestGenerateRequest(BaseModel):
     issue_key: str
+    # Optional per-call override of settings.llm_model, so a deprecated/invalid
+    # default model doesn't block generation — pick another from the UI and retry.
+    model: Optional[str] = None
 
 
 class SimilarRequest(BaseModel):

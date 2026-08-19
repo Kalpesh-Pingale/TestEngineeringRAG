@@ -70,6 +70,7 @@ async def health():
         "embeddings": embed_health,
         "vector_store": {
             "ready": compat["compatible"] and not compat.get("empty"),
+            "engine": "chromadb",
             "vectors": store.count,
             "issues": len(store.get_issue_keys()),
             **compat,

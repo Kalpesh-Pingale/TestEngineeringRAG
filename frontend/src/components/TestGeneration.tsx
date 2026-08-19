@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { api, GeneratedTests, TestCase, UploadResult } from "../api/client";
+import React, { useEffect, useMemo, useState } from "react";
+import { api, GeneratedTests, GroqModel, TestCase, UploadResult } from "../api/client";
 import {
   Badge,
   Card,
@@ -19,6 +19,8 @@ const PRIORITY_TONE: Record<string, string> = {
 
 export function TestGeneration() {
   const [issueKey, setIssueKey] = useState("");
+  const [models, setModels] = useState<GroqModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +28,12 @@ export function TestGeneration() {
   const [uploadResults, setUploadResults] = useState<UploadResult[] | null>(null);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    // Non-blocking: if this fails (e.g. no GROQ_API_KEY yet), the dropdown just
+    // falls back to "configured default" and generation still works.
+    api.getModels().then(setModels).catch(() => setModels([]));
+  }, []);
 
   const handleGenerate = async () => {
     if (!issueKey.trim()) return;
@@ -36,7 +44,9 @@ export function TestGeneration() {
     setExpanded(new Set());
     setTypeFilter("all");
     try {
-      setResult(await api.generateTests(issueKey.trim().toUpperCase()));
+      setResult(
+        await api.generateTests(issueKey.trim().toUpperCase(), selectedModel)
+      );
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -122,6 +132,20 @@ export function TestGeneration() {
             className="input min-w-[220px] flex-1 font-mono uppercase"
             aria-label="Jira issue key"
           />
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="select w-auto"
+            aria-label="LLM model"
+            title="Pick a different model if the configured default is deprecated or fails"
+          >
+            <option value="">Use configured default</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id}
+              </option>
+            ))}
+          </select>
           <button
             onClick={handleGenerate}
             disabled={loading || !issueKey.trim()}
@@ -204,9 +228,11 @@ export function TestGeneration() {
               value={formatNumber(result.tokens_saved)}
               tone={result.tokens_saved > 0 ? "ok" : "default"}
               hint={
-                result.tokens_saved > 0
-                  ? `vs ${formatNumber(result.baseline_tokens)} unretrieved`
-                  : `corpus too small (${result.indexed_chunk_count} chunks)`
+                result.baseline_tokens === 0
+                  ? "Re-sync this issue to enable this estimate"
+                  : result.tokens_saved > 0
+                  ? `≈${formatNumber(result.baseline_tokens)} tok if fetched live via MCP (tentative)`
+                  : "RAG context already ≥ a direct fetch"
               }
             />
           </div>

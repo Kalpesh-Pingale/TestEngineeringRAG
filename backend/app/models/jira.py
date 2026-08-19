@@ -22,6 +22,9 @@ class JiraIssue(BaseModel):
     assignee: Optional[str] = ""
     linked_issues: List[str] = Field(default_factory=list)
     comments: List[str] = Field(default_factory=list)
+    # Token estimate of the raw Jira payload this issue was parsed from — used to
+    # compare RAG's retrieved-chunk cost against a live direct fetch.
+    raw_fetch_tokens: int = 0
 
 
 class JiraIssueChunk(BaseModel):

@@ -23,13 +23,15 @@ class RAGResponse(BaseModel):
     prompt_sent: str = ""
     generated_response: str = ""
     total_tokens_used: int = 0
+    model_used: str = ""
     # How many retrieved chunks belong to the issue under test vs. supplied as
     # historical context from other issues.
     target_chunk_count: int = 0
     context_chunk_count: int = 0
-    # Token accounting. baseline = stuffing every indexed chunk into the prompt
-    # (what you'd do without retrieval); retrieved = the context actually sent.
-    # Savings only appear once the corpus is larger than top_k.
+    # Tentative token accounting. baseline = the raw Jira payload size for the
+    # target issue (what a live MCP/REST fetch pasted straight into the prompt
+    # would cost); retrieved = the context RAG actually sent. Zero until the
+    # issue has been (re)synced with raw_fetch_tokens captured.
     baseline_tokens: int = 0
     retrieved_tokens: int = 0
     tokens_saved: int = 0

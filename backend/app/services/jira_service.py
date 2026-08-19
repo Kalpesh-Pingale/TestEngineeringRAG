@@ -72,6 +72,9 @@ class JiraService:
         description = self._extract_text_from_adf(raw_desc)
         raw_ac = fields.get("customfield_10016", "")
         acceptance_criteria = self._extract_text_from_adf(raw_ac) if raw_ac else ""
+        # Rough token estimate (~4 chars/token) of the raw fetched payload, kept
+        # for the tentative "vs a live fetch" savings comparison at generation time.
+        raw_fetch_tokens = len(json.dumps(raw)) // 4
         return JiraIssue(
             issue_key=raw.get("key", raw.get("issue_key", "")),
             project_key=fields.get("project", {}).get("key", settings.jira_project_key),
@@ -91,6 +94,7 @@ class JiraService:
             assignee=fields.get("assignee", {}).get("displayName", "") if fields.get("assignee") else "",
             linked_issues=[],
             comments=[],
+            raw_fetch_tokens=raw_fetch_tokens,
         )
 
     def compute_content_hash(self, issue: JiraIssue) -> str:

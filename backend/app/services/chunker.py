@@ -92,6 +92,7 @@ class TextChunker:
             "labels": ",".join(issue.labels),
             "components": ",".join(issue.components),
             "updated_date": issue.updated_date or "",
+            "raw_fetch_tokens": issue.raw_fetch_tokens,
         }
 
         # Build comprehensive text from issue fields

@@ -7,3 +7,5 @@ numpy>=2.0.0
 python-dotenv>=1.0.1
 # Local embeddings via ONNX runtime — no PyTorch, no model server, no API key.
 fastembed>=0.4.0
+# Embedded vector database — runs in-process (PersistentClient), no server.
+chromadb>=1.5

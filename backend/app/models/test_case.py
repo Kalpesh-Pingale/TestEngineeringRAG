@@ -24,7 +24,8 @@ class GeneratedTests(BaseModel):
     # versus related historical issues.
     target_chunk_count: int = 0
     context_chunk_count: int = 0
-    # Token accounting for this generation call.
+    # Tentative token accounting for this generation call — baseline is the raw
+    # Jira payload size for this issue (a live MCP/REST fetch), not the whole corpus.
     total_tokens_used: int = 0
     baseline_tokens: int = 0
     retrieved_tokens: int = 0

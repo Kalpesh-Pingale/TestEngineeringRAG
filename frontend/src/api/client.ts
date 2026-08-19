@@ -32,12 +32,18 @@ export interface RAGResponse {
   prompt_sent: string;
   generated_response: string;
   total_tokens_used: number;
+  model_used: string;
   target_chunk_count: number;
   context_chunk_count: number;
   baseline_tokens: number;
   retrieved_tokens: number;
   tokens_saved: number;
   indexed_chunk_count: number;
+}
+
+export interface GroqModel {
+  id: string;
+  context_window: number;
 }
 
 export interface TestCase {
@@ -248,7 +254,8 @@ export const api = {
         },
       })
     ),
-  generateTests: (issueKey: string) =>
+  getModels: () => request<GroqModel[]>("/api/rag/models"),
+  generateTests: (issueKey: string, model?: string) =>
     logged(
       "rag.generate-tests",
       `Generate tests — ${issueKey}`,
@@ -256,7 +263,7 @@ export const api = {
       () =>
         request<GeneratedTests>("/api/rag/generate-tests", {
           method: "POST",
-          body: JSON.stringify({ issue_key: issueKey }),
+          body: JSON.stringify({ issue_key: issueKey, model: model || undefined }),
         }),
       (r) => ({
         summary: `Generated ${r.total_count} test case${
