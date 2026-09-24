@@ -16,18 +16,21 @@ embedder = EmbeddingService()
 
 
 @router.get("/stats")
-async def vector_stats() -> dict:
+async def vector_stats(project_key: str = "") -> dict:
     vector_store.reload()
+    pk = project_key or None
     return {
-        "total_vectors": vector_store.count,
-        "unique_issues": len(vector_store.get_issue_keys()),
+        "total_vectors": (
+            vector_store.count if not pk else len(vector_store.get_all_metadata(pk))
+        ),
+        "unique_issues": len(vector_store.get_issue_keys(pk)),
     }
 
 
 @router.get("/documents")
-async def list_documents() -> List[Dict[str, Any]]:
+async def list_documents(project_key: str = "") -> List[Dict[str, Any]]:
     vector_store.reload()
-    return vector_store.get_all_metadata()
+    return vector_store.get_all_metadata(project_key or None)
 
 
 @router.post("/search")
@@ -45,7 +48,9 @@ async def search_similar(req: SearchRequest) -> List[RetrievedChunk]:
 
     try:
         query_vec = await embedder.generate_embedding(req.query)
-        return vector_store.similarity_search(query_vec, top_k=req.top_k)
+        return vector_store.similarity_search(
+            query_vec, top_k=req.top_k, project_key=req.project_key
+        )
     except EmbeddingError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:

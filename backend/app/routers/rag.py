@@ -76,7 +76,9 @@ async def generate_tests(req: TestGenerateRequest):
 @router.post("/similar")
 async def find_similar(req: SimilarRequest):
     try:
-        return await rag_service.similar_stories(req.issue_key, req.top_k)
+        return await rag_service.similar_stories(
+            req.issue_key, req.top_k, cross_project=bool(req.cross_project)
+        )
     except Exception as e:
         raise _handle(e)
 

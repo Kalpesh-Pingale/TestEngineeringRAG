@@ -70,7 +70,7 @@ class RAGService:
         )
 
     async def _retrieve_for_issue(
-        self, issue_key: str, context_k: int
+        self, issue_key: str, context_k: int, cross_project: bool = False
     ) -> tuple[List[RetrievedChunk], List[RetrievedChunk]]:
         """Fetch the target issue's own chunks, plus semantic neighbours.
 
@@ -79,6 +79,11 @@ class RAGService:
         you actually asked about ranks in the top-k — it competes with every
         other issue — so the one document that must be in context could be
         missing entirely.
+
+        Neighbours default to the target issue's own project: once more than
+        one project is indexed, an unscoped search could surface unrelated
+        content from a different project's domain. Pass cross_project=True
+        to search every indexed project instead.
         """
         issue_key = issue_key.strip().upper()
         target_records = self.vector_store.get_by_issue_key(issue_key)
@@ -107,12 +112,14 @@ class RAGService:
         # reference (patterns, past defects), never as the spec under test.
         context_chunks: List[RetrievedChunk] = []
         if context_k > 0:
+            target_project = target_chunks[0].project_key if target_chunks else ""
             seed = "\n".join(c.content for c in target_chunks)
             seed_vec = await self.embedder.generate_embedding(seed)
             context_chunks = self.vector_store.similarity_search(
                 seed_vec,
                 top_k=context_k,
                 exclude_issue_key=issue_key,
+                project_key=None if cross_project else (target_project or None),
             )
 
         return target_chunks, context_chunks
@@ -308,10 +315,12 @@ Response:"""
             indexed_chunk_count=len(self.vector_store.get_all_metadata()),
         )
 
-    async def similar_stories(self, issue_key: str, top_k: int = 5) -> RAGResponse:
+    async def similar_stories(
+        self, issue_key: str, top_k: int = 5, cross_project: bool = False
+    ) -> RAGResponse:
         self._assert_store_usable()
         target_chunks, context_chunks = await self._retrieve_for_issue(
-            issue_key, context_k=top_k
+            issue_key, context_k=top_k, cross_project=cross_project
         )
         query = f"Find issues similar to {issue_key}"
         prompt = self._build_prompt(query, context_chunks)

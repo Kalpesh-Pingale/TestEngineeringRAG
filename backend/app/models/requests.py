@@ -17,8 +17,12 @@ class TestGenerateRequest(BaseModel):
 class SimilarRequest(BaseModel):
     issue_key: str
     top_k: int = 5
+    # Opt-in: by default "similar issues" stay within the target issue's own
+    # project. Set true to search across every indexed project.
+    cross_project: Optional[bool] = False
 
 
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
+    project_key: Optional[str] = None

@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # Jira
     jira_base_url: str = ""
     jira_project_key: str = ""
+    # Optional: additional Jira projects to sync/search alongside jira_project_key,
+    # comma-separated (e.g. "SHOP,BANK"). Leave blank for a single-project setup —
+    # jira_project_key remains the fallback used whenever a caller omits project_key.
+    jira_project_keys: str = ""
     jira_email: str = ""
     jira_api_token: str = ""
     jira_mcp_server: str = "http://localhost:8080"
@@ -59,6 +63,27 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: str = "http://localhost:3000"
+
+    @property
+    def project_keys(self) -> list[str]:
+        """All configured Jira projects, default first, deduplicated.
+
+        jira_project_keys unset -> a single-element list built from
+        jira_project_key, i.e. today's single-project behavior unchanged.
+        """
+        raw = [self.jira_project_key] + self.jira_project_keys.split(",")
+        seen: set[str] = set()
+        keys: list[str] = []
+        for k in raw:
+            k = k.strip().upper()
+            if k and k not in seen:
+                seen.add(k)
+                keys.append(k)
+        return keys
+
+    @property
+    def default_project_key(self) -> str:
+        return self.jira_project_key or (self.project_keys[0] if self.project_keys else "")
 
 
 settings = Settings()

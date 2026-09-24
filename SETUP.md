@@ -50,6 +50,7 @@ Update the following **required** values:
 
 JIRA_BASE_URL=https://your-company.atlassian.net     → your Jira instance URL
 JIRA_PROJECT_KEY=ABC                                  → your Jira project key (e.g., MYPROJ)
+JIRA_PROJECT_KEYS=                                    → optional: more projects to sync, comma-separated (e.g. ABC,XYZ)
 JIRA_EMAIL=your-email@example.com                     → your Jira login email
 JIRA_API_TOKEN=your-api-token                         → generate from id.atlassian.com/manage/api-tokens
 
@@ -69,7 +70,8 @@ TESTRAIL_API_KEY=your-api-key                          → TestRail API key
 | Variable | What it does | Required? |
 |----------|-------------|-----------|
 | `JIRA_BASE_URL` | Your Jira instance URL | ✅ Yes |
-| `JIRA_PROJECT_KEY` | The Jira project to sync | ✅ Yes |
+| `JIRA_PROJECT_KEY` | The Jira project to sync (default when a request omits `project_key`) | ✅ Yes |
+| `JIRA_PROJECT_KEYS` | Additional projects to sync/search, comma-separated | No (default: single-project) |
 | `JIRA_EMAIL` | Your Jira login email | ✅ Yes |
 | `JIRA_API_TOKEN` | Jira API token (generate from Atlassian) | ✅ Yes |
 | `JIRA_MCP_SERVER` | URL where Jira MCP server runs | Only if `JIRA_USE_MCP=true` |
@@ -281,12 +283,15 @@ After running a sync, you'll see:
 
 ```
 chromadb/
-├── vectors.npy        # Vector embeddings (numpy array)
-├── metadata.jsonl     # Metadata for each vector
-└── sync_metadata.json # Sync state (last sync time, hashes)
+├── chroma.sqlite3                # Embedded ChromaDB index — one collection, shared by
+│                                  # every configured project (filtered by project_key)
+├── <collection-id>/               # ChromaDB's internal segment data
+└── sync_metadata.<PROJECT>.json   # Sync state per project (last sync time, hashes) —
+                                    # one file per entry in JIRA_PROJECT_KEYS
 ```
 
-This is your local vector database. Delete it to reset and re-sync.
+This is your local vector database. Delete it to reset and re-sync. A single-project
+setup (no `JIRA_PROJECT_KEYS` set) behaves the same way with one metadata file.
 
 ---
 
@@ -354,6 +359,7 @@ Full walkthrough, the complete variable list, and a pre-deploy checklist:
 | API docs | http://localhost:8000/docs | GET |
 | Health check | http://localhost:8000/api/health | GET |
 | Full sync | http://localhost:8000/api/sync/full | POST |
+| Configured projects | http://localhost:8000/api/sync/projects | GET |
 | Generate tests | http://localhost:8000/api/rag/generate-tests | POST |
 | RAG query | http://localhost:8000/api/rag/query | POST |
 | Similarity search | http://localhost:8000/api/vector/search | POST |
@@ -413,7 +419,9 @@ changing it.
 is ignored. Restart uvicorn after editing.
 
 **Sync shows 0 issues**
-→ Check Jira credentials and project key. Try `JIRA_USE_MCP=false` as a fallback.
+→ Check Jira credentials and project key — including which project is selected in the
+Sync tab's dropdown if `JIRA_PROJECT_KEYS` lists more than one. Try `JIRA_USE_MCP=false`
+as a fallback.
 
 **"Cannot find MCP server"**
 → MCP server isn't running. Start it, or set `JIRA_USE_MCP=false` to use the REST API.

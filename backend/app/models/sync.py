@@ -23,6 +23,7 @@ class SyncResult(BaseModel):
     total_tokens_saved: int = 0
     total_embeddings: int = 0
     last_sync_time: str = ""
+    project_key: str = ""
 
 
 class SyncStatus(BaseModel):
@@ -30,3 +31,13 @@ class SyncStatus(BaseModel):
     progress: int = 0
     current_phase: str = ""
     result: Optional[SyncResult] = None
+    project_key: str = ""
+
+
+class ProjectSyncSummary(BaseModel):
+    project_key: str
+    last_sync_time: Optional[str] = None
+    total_issues: int = 0
+    total_embeddings: int = 0
+    embedding_version: str = ""
+    is_default: bool = False

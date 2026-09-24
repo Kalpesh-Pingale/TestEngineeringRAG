@@ -71,6 +71,19 @@ class VectorStore:
         self._pending_ids, self._pending_vectors, self._pending_metadatas = [], [], []
         self._client.delete_collection(name=COLLECTION_NAME)
 
+    def clear_project(self, project_key: str) -> int:
+        """Delete every vector belonging to one project, leaving others intact.
+
+        Used by Full Sync so re-syncing one project cannot destroy another
+        project's vectors — clear_all() drops the whole collection, which is
+        only safe when a single project is configured.
+        """
+        existing = self._collection.get(where={"project_key": project_key}, include=[])
+        ids = existing.get("ids", [])
+        if ids:
+            self._collection.delete(ids=ids)
+        return len(ids)
+
     @property
     def count(self) -> int:
         return self._collection.count()
@@ -169,16 +182,28 @@ class VectorStore:
         query_vector: List[float],
         top_k: int = 5,
         exclude_issue_key: Optional[str] = None,
+        project_key: Optional[str] = None,
     ) -> List[RetrievedChunk]:
-        """Cosine similarity search, optionally excluding one issue's own chunks.
+        """Cosine similarity search, optionally excluding one issue's own chunks
+        and/or restricting results to one project.
 
         `exclude_issue_key` is what makes issue-scoped context retrieval possible
-        (e.g. "similar chunks from issues other than SCRUM-17").
+        (e.g. "similar chunks from issues other than SCRUM-17"). `project_key`
+        keeps that context from crossing project boundaries once more than one
+        project is indexed.
         """
         if self.count == 0 or top_k <= 0:
             return []
 
-        where = {"issue_key": {"$ne": exclude_issue_key}} if exclude_issue_key else None
+        conditions = []
+        if exclude_issue_key:
+            conditions.append({"issue_key": {"$ne": exclude_issue_key}})
+        if project_key:
+            conditions.append({"project_key": project_key})
+        where = (
+            conditions[0] if len(conditions) == 1
+            else ({"$and": conditions} if conditions else None)
+        )
         n_results = min(top_k, self.count)
 
         try:
@@ -211,9 +236,14 @@ class VectorStore:
             )
         return results
 
-    def get_all_metadata(self) -> List[Dict[str, Any]]:
-        result = self._collection.get(include=["metadatas"])
+    def get_all_metadata(self, project_key: Optional[str] = None) -> List[Dict[str, Any]]:
+        where = {"project_key": project_key} if project_key else None
+        result = self._collection.get(where=where, include=["metadatas"])
         return result.get("metadatas", [])
 
-    def get_issue_keys(self) -> set:
-        return {m.get("issue_key") for m in self.get_all_metadata() if m.get("issue_key")}
+    def get_issue_keys(self, project_key: Optional[str] = None) -> set:
+        return {
+            m.get("issue_key")
+            for m in self.get_all_metadata(project_key)
+            if m.get("issue_key")
+        }

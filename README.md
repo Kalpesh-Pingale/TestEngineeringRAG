@@ -50,7 +50,7 @@ An AI-powered Test Engineering Platform using **Jira** + **TestRail** + a local 
 
 ## What This Does
 
-1. **Ingests Jira data** — Reads User Stories and Bugs from a Jira project into a local vector store
+1. **Ingests Jira data** — Reads User Stories and Bugs from one or more Jira projects (same workspace) into a local vector store
 2. **Incremental sync** — Subsequent runs process only changed issues, using timestamp + content-hash change detection
 3. **Two-stage RAG test generation** — Fetches the target issue's chunks by exact key match, then retrieves semantically similar *other* issues as reference context, and sends both to the LLM with distinct roles
 4. **TestRail upload** — Optionally uploads generated test cases
@@ -192,7 +192,8 @@ All live configuration is in **`backend/.env`**. Copy `backend/.env.example` to 
 |----------|-------------|---------|
 | **Jira** | | |
 | `JIRA_BASE_URL` | Your Jira instance URL | `https://company.atlassian.net` |
-| `JIRA_PROJECT_KEY` | Jira project key | `PROJ` |
+| `JIRA_PROJECT_KEY` | Jira project key (also the default when a request omits one) | `PROJ` |
+| `JIRA_PROJECT_KEYS` | Optional — additional projects to sync/search, comma-separated | `PROJ,OTHER` |
 | `JIRA_EMAIL` | Your Jira login email | `user@company.com` |
 | `JIRA_API_TOKEN` | Jira API token | *(from id.atlassian.com/manage/api-tokens)* |
 | `JIRA_MCP_SERVER` | Jira MCP server URL | `http://localhost:8080` |
@@ -229,18 +230,18 @@ Set `JIRA_USE_MCP=false` to use the Jira REST API directly (needs `JIRA_EMAIL` +
 
 ### 1. First run — Full Sync
 
-Sync tab → **Full Rebuild**. Fetches all Stories and Bugs, chunks them, embeds locally, and writes `backend/chromadb/`. Each vector is stamped with the embedding model that produced it.
+Sync tab → (pick a project, if more than one is configured via `JIRA_PROJECT_KEYS`) → **Full Rebuild**. Fetches all Stories and Bugs for that project, chunks them, embeds locally, and writes `backend/chromadb/`. Each vector is stamped with the embedding model that produced it and the project it belongs to; rebuilding one project never touches another's vectors.
 
 ### 2. Ongoing — Incremental Sync
 
-Sync tab → **Incremental Sync**. Fetches only issues updated since the last run; unchanged content (same hash) is skipped without re-embedding.
+Sync tab → **Incremental Sync**. Fetches only issues updated since the last run *for the selected project*; unchanged content (same hash) is skipped without re-embedding. Repeat per project — each tracks its own last-sync time independently.
 
 ### 3. Generate test cases
 
 Test Generation tab → enter an issue key (e.g. `PROJ-123`) → **Generate Tests**.
 
 1. **Stage 1** — all chunks whose `issue_key` matches, by exact match. If the issue is not indexed, you get a clear `409` naming the indexed keys rather than tests generated from unrelated context
-2. **Stage 2** — top-k semantically similar chunks from *other* issues, as labelled reference material
+2. **Stage 2** — top-k semantically similar chunks from *other* issues, as labelled reference material. When more than one project is indexed, this stays scoped to the target issue's own project so context never crosses project boundaries
 3. Both go to the LLM under distinct headings (`TARGET ISSUE` vs `REFERENCE ONLY`), with a strict JSON output contract
 4. Results render one row per test case; export to CSV or upload to TestRail
 
@@ -264,10 +265,11 @@ Scope: the log lives in the browser, is capped at 100 entries, persists across r
 | POST | `/api/sync/full` | Full rebuild |
 | POST | `/api/sync/incremental` | Incremental sync |
 | GET | `/api/sync/status` | Current sync status |
-| GET | `/api/sync/metadata` | Sync metadata incl. embedding version |
-| GET | `/api/vector/stats` | Vector DB stats |
-| GET | `/api/vector/documents` | All stored chunks + metadata |
-| POST | `/api/vector/search` | Similarity search (no LLM call) |
+| GET | `/api/sync/metadata` | Sync metadata incl. embedding version (`?project_key=` for a specific project) |
+| GET | `/api/sync/projects` | Every configured project + its last sync time, issue/embedding counts |
+| GET | `/api/vector/stats` | Vector DB stats (`?project_key=` to scope to one project) |
+| GET | `/api/vector/documents` | All stored chunks + metadata (`?project_key=` to scope to one project) |
+| POST | `/api/vector/search` | Similarity search (no LLM call); body may include `project_key` |
 | POST | `/api/rag/query` | RAG query |
 | POST | `/api/rag/generate-tests` | Generate tests for an issue |
 | POST | `/api/rag/similar` | Find similar issues |
@@ -359,7 +361,7 @@ Vercel does not read `.env` files from the repo — that is the point of gitigno
 **Backend host** (Render/Railway/Fly/Vercel-Python alike) — set every key from `backend/.env.example` in that platform's environment settings, and mark the tokens as secret/sensitive where the platform offers it:
 
 ```
-JIRA_BASE_URL, JIRA_PROJECT_KEY, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_USE_MCP=false
+JIRA_BASE_URL, JIRA_PROJECT_KEY, JIRA_PROJECT_KEYS, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_USE_MCP=false
 TESTRAIL_ENABLED, TESTRAIL_BASE_URL, TESTRAIL_PROJECT_ID, TESTRAIL_SUITE_ID,
 TESTRAIL_SECTION_ID, TESTRAIL_USERNAME, TESTRAIL_API_KEY
 EMBEDDING_PROVIDER, EMBEDDING_MODEL, FASTEMBED_CACHE_DIR
@@ -425,7 +427,7 @@ No. Top-k retrieval selects by similarity to the query, so counting the selectio
 No. No code reads it and PyYAML is not a dependency. All live configuration is in `backend/.env`.
 
 **Where is data stored?**
-`backend/chromadb/` (`chroma.sqlite3` from the embedded ChromaDB client, plus `sync_metadata.json`). Both it and `backend/model_cache/` are gitignored and rebuildable via Full Sync.
+`backend/chromadb/` — `chroma.sqlite3` from the embedded ChromaDB client (one collection, shared by every configured project, filtered by a `project_key` field on each chunk), plus one `sync_metadata.<PROJECT>.json` per project (a pre-multi-project `sync_metadata.json` migrates automatically into this on first read). Both the directory and `backend/model_cache/` are gitignored and rebuildable via Full Sync.
 
 **Can I deploy the whole thing to Vercel?**
 The frontend, yes. The backend, not as it stands — it writes the vector store to disk, downloads a ~90MB ONNX model, and runs multi-minute syncs, none of which fit serverless. Host the backend where it has a persistent disk and put `REACT_APP_API_URL` in the Vercel project. See [Deployment](#deployment).
@@ -434,7 +436,7 @@ The frontend, yes. The backend, not as it stands — it writes the vector store 
 Through the host's environment-variable store (Vercel: Project → Settings → Environment Variables). `backend/app/config.py` falls back to process environment variables when no `.env` file is present, so the same code reads local files in development and injected variables in production. See [Secrets](#secrets).
 
 **Can I use this for multiple Jira projects?**
-Today it is single-project — change `JIRA_PROJECT_KEY` and re-sync. Multi-project isolation is Phase 3 in [docs/RAG_PRODUCTION_ROADMAP.md](docs/RAG_PRODUCTION_ROADMAP.md).
+Yes, within one Jira workspace/account — set `JIRA_PROJECT_KEYS=PROJ,OTHER` in `backend/.env` (comma-separated; `JIRA_PROJECT_KEY` stays the default). Each project syncs and stores its own `sync_metadata`, and generated-test context stays scoped to the issue's own project — a Full Sync of one project never touches another's vectors. The Sync and Vector Database tabs show a project picker once more than one is configured. Full multi-tenant isolation (separate vector stores, separate Jira credentials per project, 30+ projects) is still the larger Phase 3 vision in [docs/RAG_PRODUCTION_ROADMAP.md](docs/RAG_PRODUCTION_ROADMAP.md) — what's shipped covers the common case of several projects on one workspace.
 
 ---
 

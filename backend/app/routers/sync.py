@@ -1,9 +1,12 @@
 import logging
+from typing import List
+
 from fastapi import APIRouter, HTTPException
 
-from app.models.sync import SyncResult, SyncStatus, SyncMetadata
+from app.config import settings
+from app.models.sync import ProjectSyncSummary, SyncResult, SyncStatus, SyncMetadata
 from app.models.requests import SyncRequest
-from app.services.sync_service import SyncService
+from app.services.sync_service import SyncInProgressError, SyncService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -19,6 +22,8 @@ async def full_sync(req: SyncRequest):
             issue_types=req.issue_types,
         )
         return result
+    except SyncInProgressError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -31,6 +36,8 @@ async def incremental_sync(req: SyncRequest):
             issue_types=req.issue_types,
         )
         return result
+    except SyncInProgressError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -41,5 +48,22 @@ async def sync_status() -> SyncStatus:
 
 
 @router.get("/metadata", response_model=SyncMetadata)
-async def sync_metadata() -> SyncMetadata:
-    return sync_service.get_sync_metadata()
+async def sync_metadata(project_key: str = "") -> SyncMetadata:
+    return sync_service.get_sync_metadata(project_key)
+
+
+@router.get("/projects", response_model=List[ProjectSyncSummary])
+async def list_projects() -> List[ProjectSyncSummary]:
+    metas = sync_service.get_all_projects_metadata()
+    default_pk = settings.default_project_key
+    return [
+        ProjectSyncSummary(
+            project_key=pk,
+            last_sync_time=meta.last_sync_time,
+            total_issues=meta.total_issues,
+            total_embeddings=meta.total_embeddings,
+            embedding_version=meta.embedding_version,
+            is_default=(pk == default_pk),
+        )
+        for pk, meta in metas.items()
+    ]

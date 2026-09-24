@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { api, SyncStatus } from "../api/client";
+import { api, ProjectSyncSummary, SyncStatus } from "../api/client";
 import {
+  Badge,
   Card,
   EmptyState,
   ErrorBanner,
@@ -15,16 +16,40 @@ export function SyncDashboard() {
   const [meta, setMeta] = useState<any>(null);
   const [running, setRunning] = useState<"full" | "incremental" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectSyncSummary[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>("");
+
+  useEffect(() => {
+    api
+      .listProjects()
+      .then((list) => {
+        setProjects(list);
+        setSelectedProject(
+          (prev) =>
+            prev ||
+            list.find((p) => p.is_default)?.project_key ||
+            list[0]?.project_key ||
+            ""
+        );
+      })
+      .catch(() => {
+        /* single-project deployments without /api/sync/projects still work
+           via the no-arg fallback on every sync/metadata call below */
+      });
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [s, m] = await Promise.all([api.syncStatus(), api.syncMetadata()]);
+      const [s, m] = await Promise.all([
+        api.syncStatus(),
+        api.syncMetadata(selectedProject || undefined),
+      ]);
       setStatus(s);
       setMeta(m);
     } catch {
       /* the shell's health banner already reports an unreachable backend */
     }
-  }, []);
+  }, [selectedProject]);
 
   useEffect(() => {
     fetchStatus();
@@ -36,15 +61,18 @@ export function SyncDashboard() {
     setRunning(mode);
     setError(null);
     try {
+      const pk = selectedProject || undefined;
       const result =
-        mode === "full" ? await api.fullSync() : await api.incrementalSync();
+        mode === "full" ? await api.fullSync(pk) : await api.incrementalSync(pk);
       setStatus({
         is_running: false,
         progress: 100,
         current_phase: "Complete",
         result,
+        project_key: result.project_key,
       });
       await fetchStatus();
+      api.listProjects().then(setProjects).catch(() => {});
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -62,6 +90,22 @@ export function SyncDashboard() {
         subtitle="Index Jira issues into the vector database. Incremental sync only reprocesses what changed."
         actions={
           <>
+            {projects.length > 1 && (
+              <select
+                value={selectedProject}
+                onChange={(e) => setSelectedProject(e.target.value)}
+                className="select w-auto"
+                aria-label="Jira project"
+                title="Which Jira project to sync"
+              >
+                {projects.map((p) => (
+                  <option key={p.project_key} value={p.project_key}>
+                    {p.project_key}
+                    {p.is_default ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => runSync("incremental")}
               disabled={busy}
@@ -179,6 +223,55 @@ export function SyncDashboard() {
               Rebuild so their provenance can be verified.
             </p>
           )}
+        </Card>
+      )}
+
+      {/* Multi-project overview */}
+      {projects.length > 1 && (
+        <Card
+          title="Configured Projects"
+          description="Click a row to switch which project the buttons above act on."
+          className="mt-6 p-0"
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="th">Project</th>
+                  <th className="th">Last Sync</th>
+                  <th className="th">Issues</th>
+                  <th className="th">Embeddings</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p) => (
+                  <tr
+                    key={p.project_key}
+                    onClick={() => setSelectedProject(p.project_key)}
+                    className={`cursor-pointer border-b border-edge transition-colors last:border-0 hover:bg-surface-overlay/50 ${
+                      p.project_key === selectedProject ? "bg-surface-overlay/40" : ""
+                    }`}
+                  >
+                    <td className="td">
+                      <span className="mr-2 font-mono text-sm font-semibold text-brand">
+                        {p.project_key}
+                      </span>
+                      {p.is_default && <Badge tone="brand">default</Badge>}
+                    </td>
+                    <td className="td text-content-muted">
+                      {fmtDate(p.last_sync_time)}
+                    </td>
+                    <td className="td text-content-muted">
+                      {formatNumber(p.total_issues)}
+                    </td>
+                    <td className="td text-content-muted">
+                      {formatNumber(p.total_embeddings)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
     </div>

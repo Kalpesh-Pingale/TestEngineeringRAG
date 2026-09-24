@@ -81,6 +81,7 @@ export interface SyncResult {
   total_tokens_saved: number;
   total_embeddings: number;
   last_sync_time: string;
+  project_key: string;
 }
 
 export interface SyncStatus {
@@ -88,6 +89,16 @@ export interface SyncStatus {
   progress: number;
   current_phase: string;
   result?: SyncResult;
+  project_key: string;
+}
+
+export interface ProjectSyncSummary {
+  project_key: string;
+  last_sync_time?: string;
+  total_issues: number;
+  total_embeddings: number;
+  embedding_version: string;
+  is_default: boolean;
 }
 
 export interface UploadResult {
@@ -206,15 +217,22 @@ export const api = {
       body: JSON.stringify({ project_key: projectKey, issue_types: issueTypes }),
     }),
   syncStatus: () => request<SyncStatus>("/api/sync/status"),
-  syncMetadata: () => request<any>("/api/sync/metadata"),
+  syncMetadata: (projectKey?: string) =>
+    request<any>(
+      `/api/sync/metadata${projectKey ? `?project_key=${encodeURIComponent(projectKey)}` : ""}`
+    ),
+  listProjects: () => request<ProjectSyncSummary[]>("/api/sync/projects"),
 
   // Vector store
-  vectorStats: () =>
+  vectorStats: (projectKey?: string) =>
     request<{ total_vectors: number; unique_issues: number }>(
-      "/api/vector/stats"
+      `/api/vector/stats${projectKey ? `?project_key=${encodeURIComponent(projectKey)}` : ""}`
     ),
-  listDocuments: () => request<any[]>("/api/vector/documents"),
-  searchSimilar: (query: string, topK = 5) =>
+  listDocuments: (projectKey?: string) =>
+    request<any[]>(
+      `/api/vector/documents${projectKey ? `?project_key=${encodeURIComponent(projectKey)}` : ""}`
+    ),
+  searchSimilar: (query: string, topK = 5, projectKey?: string) =>
     logged(
       "vector.search",
       `Similarity search — "${query}"`,
@@ -222,7 +240,7 @@ export const api = {
       () =>
         request<RetrievedChunk[]>("/api/vector/search", {
           method: "POST",
-          body: JSON.stringify({ query, top_k: topK }),
+          body: JSON.stringify({ query, top_k: topK, project_key: projectKey || undefined }),
         }),
       (chunks) => ({
         summary: `Similarity search returned ${chunks.length} chunk${

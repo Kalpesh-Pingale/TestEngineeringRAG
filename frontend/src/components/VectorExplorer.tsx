@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { api, RetrievedChunk } from "../api/client";
+import { api, ProjectSyncSummary, RetrievedChunk } from "../api/client";
 import {
   Badge,
   Card,
@@ -25,16 +25,25 @@ export function VectorExplorer() {
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectSyncSummary[]>([]);
+  const [projectFilter, setProjectFilter] = useState("");
+
+  useEffect(() => {
+    api.listProjects().then(setProjects).catch(() => {});
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
-      const [s, d] = await Promise.all([api.vectorStats(), api.listDocuments()]);
+      const [s, d] = await Promise.all([
+        api.vectorStats(projectFilter || undefined),
+        api.listDocuments(projectFilter || undefined),
+      ]);
       setStats(s);
       setDocs(d);
     } catch (e: any) {
       setError(e.message);
     }
-  }, []);
+  }, [projectFilter]);
 
   useEffect(() => {
     fetchData();
@@ -45,7 +54,9 @@ export function VectorExplorer() {
     setLoading(true);
     setError(null);
     try {
-      setSearchResults(await api.searchSimilar(searchQuery));
+      setSearchResults(
+        await api.searchSimilar(searchQuery, 5, projectFilter || undefined)
+      );
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -72,6 +83,23 @@ export function VectorExplorer() {
       <PageHeader
         title="Vector Database"
         subtitle="Inspect what is indexed and test retrieval directly, without invoking the LLM."
+        actions={
+          projects.length > 1 && (
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="select w-auto"
+              aria-label="Filter by Jira project"
+            >
+              <option value="">All projects</option>
+              {projects.map((p) => (
+                <option key={p.project_key} value={p.project_key}>
+                  {p.project_key}
+                </option>
+              ))}
+            </select>
+          )
+        }
       />
 
       {error && <ErrorBanner error={error} onDismiss={() => setError(null)} />}
@@ -191,6 +219,9 @@ export function VectorExplorer() {
                     {issueKey}
                   </span>
                   <Badge>{chunks[0]?.issue_type || "—"}</Badge>
+                  {projects.length > 1 && (
+                    <Badge tone="brand">{chunks[0]?.project_key || "—"}</Badge>
+                  )}
                   <span className="ml-auto text-xs text-content-subtle">
                     {chunks.length} chunk{chunks.length === 1 ? "" : "s"}
                   </span>
