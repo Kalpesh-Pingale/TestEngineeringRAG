@@ -192,8 +192,7 @@ All live configuration is in **`backend/.env`**. Copy `backend/.env.example` to 
 |----------|-------------|---------|
 | **Jira** | | |
 | `JIRA_BASE_URL` | Your Jira instance URL | `https://company.atlassian.net` |
-| `JIRA_PROJECT_KEY` | Jira project key (also the default when a request omits one) | `PROJ` |
-| `JIRA_PROJECT_KEYS` | Optional — additional projects to sync/search, comma-separated | `PROJ,OTHER` |
+| `JIRA_PROJECT_KEY` | One Jira project, or several comma-separated on the same workspace — the first is the default when a request omits one | `PROJ` or `PROJ,OTHER` |
 | `JIRA_EMAIL` | Your Jira login email | `user@company.com` |
 | `JIRA_API_TOKEN` | Jira API token | *(from id.atlassian.com/manage/api-tokens)* |
 | `JIRA_MCP_SERVER` | Jira MCP server URL | `http://localhost:8080` |
@@ -230,7 +229,7 @@ Set `JIRA_USE_MCP=false` to use the Jira REST API directly (needs `JIRA_EMAIL` +
 
 ### 1. First run — Full Sync
 
-Sync tab → (pick a project, if more than one is configured via `JIRA_PROJECT_KEYS`) → **Full Rebuild**. Fetches all Stories and Bugs for that project, chunks them, embeds locally, and writes `backend/chromadb/`. Each vector is stamped with the embedding model that produced it and the project it belongs to; rebuilding one project never touches another's vectors.
+Sync tab → (pick a project, if `JIRA_PROJECT_KEY` lists more than one) → **Full Rebuild**. Fetches all Stories and Bugs for that project, chunks them, embeds locally, and writes `backend/chromadb/`. Each vector is stamped with the embedding model that produced it and the project it belongs to; rebuilding one project never touches another's vectors.
 
 ### 2. Ongoing — Incremental Sync
 
@@ -361,7 +360,7 @@ Vercel does not read `.env` files from the repo — that is the point of gitigno
 **Backend host** (Render/Railway/Fly/Vercel-Python alike) — set every key from `backend/.env.example` in that platform's environment settings, and mark the tokens as secret/sensitive where the platform offers it:
 
 ```
-JIRA_BASE_URL, JIRA_PROJECT_KEY, JIRA_PROJECT_KEYS, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_USE_MCP=false
+JIRA_BASE_URL, JIRA_PROJECT_KEY, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_USE_MCP=false
 TESTRAIL_ENABLED, TESTRAIL_BASE_URL, TESTRAIL_PROJECT_ID, TESTRAIL_SUITE_ID,
 TESTRAIL_SECTION_ID, TESTRAIL_USERNAME, TESTRAIL_API_KEY
 EMBEDDING_PROVIDER, EMBEDDING_MODEL, FASTEMBED_CACHE_DIR
@@ -436,7 +435,7 @@ The frontend, yes. The backend, not as it stands — it writes the vector store 
 Through the host's environment-variable store (Vercel: Project → Settings → Environment Variables). `backend/app/config.py` falls back to process environment variables when no `.env` file is present, so the same code reads local files in development and injected variables in production. See [Secrets](#secrets).
 
 **Can I use this for multiple Jira projects?**
-Yes, within one Jira workspace/account — set `JIRA_PROJECT_KEYS=PROJ,OTHER` in `backend/.env` (comma-separated; `JIRA_PROJECT_KEY` stays the default). Each project syncs and stores its own `sync_metadata`, and generated-test context stays scoped to the issue's own project — a Full Sync of one project never touches another's vectors. The Sync and Vector Database tabs show a project picker once more than one is configured. Full multi-tenant isolation (separate vector stores, separate Jira credentials per project, 30+ projects) is still the larger Phase 3 vision in [docs/RAG_PRODUCTION_ROADMAP.md](docs/RAG_PRODUCTION_ROADMAP.md) — what's shipped covers the common case of several projects on one workspace.
+Yes, within one Jira workspace/account — set `JIRA_PROJECT_KEY=PROJ,OTHER` in `backend/.env` (comma-separated; the first entry is the default). Each project syncs and stores its own `sync_metadata`, and generated-test context stays scoped to the issue's own project — a Full Sync of one project never touches another's vectors. The Sync and Vector Database tabs show a project picker once more than one is configured. Full multi-tenant isolation (separate vector stores, separate Jira credentials per project, 30+ projects) is still the larger Phase 3 vision in [docs/RAG_PRODUCTION_ROADMAP.md](docs/RAG_PRODUCTION_ROADMAP.md) — what's shipped covers the common case of several projects on one workspace.
 
 ---
 

@@ -44,9 +44,7 @@ services:
       - key: JIRA_BASE_URL
         sync: false
       - key: JIRA_PROJECT_KEY
-        sync: false
-      - key: JIRA_PROJECT_KEYS
-        sync: false
+        sync: false # one project ("SHOP") or several, comma-separated ("SHOP,BANK")
       - key: JIRA_EMAIL
         sync: false
       - key: JIRA_API_TOKEN

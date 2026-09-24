@@ -13,11 +13,10 @@ if _env_path.exists():
 class Settings(BaseSettings):
     # Jira
     jira_base_url: str = ""
+    # One Jira project ("SHOP") or several, comma-separated ("SHOP,BANK"), all on
+    # the same Jira workspace/account. The first entry is the default used
+    # whenever a caller omits project_key. See project_keys/default_project_key.
     jira_project_key: str = ""
-    # Optional: additional Jira projects to sync/search alongside jira_project_key,
-    # comma-separated (e.g. "SHOP,BANK"). Leave blank for a single-project setup —
-    # jira_project_key remains the fallback used whenever a caller omits project_key.
-    jira_project_keys: str = ""
     jira_email: str = ""
     jira_api_token: str = ""
     jira_mcp_server: str = "http://localhost:8080"
@@ -66,15 +65,16 @@ class Settings(BaseSettings):
 
     @property
     def project_keys(self) -> list[str]:
-        """All configured Jira projects, default first, deduplicated.
+        """Every configured Jira project, default first, deduplicated.
 
-        jira_project_keys unset -> a single-element list built from
-        jira_project_key, i.e. today's single-project behavior unchanged.
+        jira_project_key holds one key ("SHOP") or a comma-separated list
+        ("SHOP,BANK") — this is the single source of truth for which Jira
+        projects are configured. A plain single value behaves exactly as
+        before: a one-element list.
         """
-        raw = [self.jira_project_key] + self.jira_project_keys.split(",")
         seen: set[str] = set()
         keys: list[str] = []
-        for k in raw:
+        for k in self.jira_project_key.split(","):
             k = k.strip().upper()
             if k and k not in seen:
                 seen.add(k)
@@ -83,7 +83,13 @@ class Settings(BaseSettings):
 
     @property
     def default_project_key(self) -> str:
-        return self.jira_project_key or (self.project_keys[0] if self.project_keys else "")
+        """The project used whenever a caller omits project_key.
+
+        Every fetch/sync fallback should read this, never the raw
+        jira_project_key field directly — that field may hold a
+        comma-separated list, which is not a valid single project key.
+        """
+        return self.project_keys[0] if self.project_keys else ""
 
 
 settings = Settings()

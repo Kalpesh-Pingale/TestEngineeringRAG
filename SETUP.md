@@ -49,8 +49,8 @@ Update the following **required** values:
 # === YOU MUST UPDATE THESE ===
 
 JIRA_BASE_URL=https://your-company.atlassian.net     → your Jira instance URL
-JIRA_PROJECT_KEY=ABC                                  → your Jira project key (e.g., MYPROJ)
-JIRA_PROJECT_KEYS=                                    → optional: more projects to sync, comma-separated (e.g. ABC,XYZ)
+JIRA_PROJECT_KEY=ABC                                  → your Jira project key(s). One ("ABC") or several
+                                                         comma-separated ("ABC,XYZ") — the first is the default
 JIRA_EMAIL=your-email@example.com                     → your Jira login email
 JIRA_API_TOKEN=your-api-token                         → generate from id.atlassian.com/manage/api-tokens
 
@@ -70,8 +70,7 @@ TESTRAIL_API_KEY=your-api-key                          → TestRail API key
 | Variable | What it does | Required? |
 |----------|-------------|-----------|
 | `JIRA_BASE_URL` | Your Jira instance URL | ✅ Yes |
-| `JIRA_PROJECT_KEY` | The Jira project to sync (default when a request omits `project_key`) | ✅ Yes |
-| `JIRA_PROJECT_KEYS` | Additional projects to sync/search, comma-separated | No (default: single-project) |
+| `JIRA_PROJECT_KEY` | The Jira project(s) to sync — one key, or several comma-separated (first is the default when a request omits `project_key`) | ✅ Yes |
 | `JIRA_EMAIL` | Your Jira login email | ✅ Yes |
 | `JIRA_API_TOKEN` | Jira API token (generate from Atlassian) | ✅ Yes |
 | `JIRA_MCP_SERVER` | URL where Jira MCP server runs | Only if `JIRA_USE_MCP=true` |
@@ -287,11 +286,11 @@ chromadb/
 │                                  # every configured project (filtered by project_key)
 ├── <collection-id>/               # ChromaDB's internal segment data
 └── sync_metadata.<PROJECT>.json   # Sync state per project (last sync time, hashes) —
-                                    # one file per entry in JIRA_PROJECT_KEYS
+                                    # one file per key in JIRA_PROJECT_KEY
 ```
 
 This is your local vector database. Delete it to reset and re-sync. A single-project
-setup (no `JIRA_PROJECT_KEYS` set) behaves the same way with one metadata file.
+setup (`JIRA_PROJECT_KEY` with no comma) behaves the same way with one metadata file.
 
 ---
 
@@ -420,7 +419,7 @@ is ignored. Restart uvicorn after editing.
 
 **Sync shows 0 issues**
 → Check Jira credentials and project key — including which project is selected in the
-Sync tab's dropdown if `JIRA_PROJECT_KEYS` lists more than one. Try `JIRA_USE_MCP=false`
+Sync tab's dropdown if `JIRA_PROJECT_KEY` lists more than one. Try `JIRA_USE_MCP=false`
 as a fallback.
 
 **"Cannot find MCP server"**

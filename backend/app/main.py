@@ -83,7 +83,7 @@ async def health():
         },
         "jira": {
             "ready": bool(settings.jira_base_url and settings.jira_api_token),
-            "project": settings.jira_project_key,
+            "project": settings.default_project_key,
             "projects": settings.project_keys,
         },
         "testrail": {

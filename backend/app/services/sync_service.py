@@ -26,12 +26,12 @@ _SAFE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 def _sync_meta_file(project_key: str) -> Path:
     """Resolve a project key to its metadata file.
 
-    Resolves a blank project_key through settings.jira_project_key exactly
+    Resolves a blank project_key through settings.default_project_key exactly
     like run_full_sync/run_incremental_sync do, so a sync run with no
     explicit project_key and a metadata read with no query param always
     agree on which file they're using.
     """
-    pk = (project_key or settings.jira_project_key or "").strip().upper()
+    pk = (project_key or settings.default_project_key or "").strip().upper()
     if not pk or not _SAFE_KEY_RE.match(pk):
         return SYNC_META_FILE
     return Path(settings.chroma_db_path) / f"sync_metadata.{pk}.json"
@@ -74,8 +74,8 @@ class SyncService:
         # exists, adopt it as this project's metadata (and persist it under
         # the new name) so an existing deployment doesn't look "never synced"
         # and pay for a needless full re-embed.
-        resolved_pk = (project_key or settings.jira_project_key or "").strip().upper()
-        is_default = resolved_pk == settings.jira_project_key.strip().upper()
+        resolved_pk = (project_key or settings.default_project_key or "").strip().upper()
+        is_default = resolved_pk == settings.default_project_key
         if is_default and meta_file != SYNC_META_FILE and SYNC_META_FILE.exists():
             try:
                 legacy = SyncMetadata(**json.loads(SYNC_META_FILE.read_text()))
@@ -149,7 +149,7 @@ class SyncService:
         project_key: str = "",
         issue_types=None,
     ) -> SyncResult:
-        resolved_pk = (project_key or settings.jira_project_key or "").strip().upper()
+        resolved_pk = (project_key or settings.default_project_key or "").strip().upper()
         self.status = SyncStatus(
             is_running=True,
             progress=0,
@@ -223,7 +223,7 @@ class SyncService:
                 f"'{self.status.project_key or '?'}'. Wait for it to finish."
             )
         async with self._lock:
-            resolved_pk = (project_key or settings.jira_project_key or "").strip().upper()
+            resolved_pk = (project_key or settings.default_project_key or "").strip().upper()
             self.status = SyncStatus(
                 is_running=True,
                 progress=0,

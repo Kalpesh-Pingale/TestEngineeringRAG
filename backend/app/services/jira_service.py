@@ -77,7 +77,7 @@ class JiraService:
         raw_fetch_tokens = len(json.dumps(raw)) // 4
         return JiraIssue(
             issue_key=raw.get("key", raw.get("issue_key", "")),
-            project_key=fields.get("project", {}).get("key", settings.jira_project_key),
+            project_key=fields.get("project", {}).get("key", settings.default_project_key),
             issue_type=fields.get("issuetype", {}).get("name", "Unknown"),
             summary=fields.get("summary", ""),
             description=description,
@@ -106,7 +106,7 @@ class JiraService:
         project_key: str = "",
         issue_types: Optional[List[str]] = None,
     ) -> List[JiraIssue]:
-        pk = project_key or settings.jira_project_key
+        pk = project_key or settings.default_project_key
         it = issue_types or ["Story", "Bug"]
         logger.info(f"Fetching all {it} from Jira project {pk}")
 
@@ -127,7 +127,7 @@ class JiraService:
         project_key: str = "",
         issue_types: Optional[List[str]] = None,
     ) -> List[JiraIssue]:
-        pk = project_key or settings.jira_project_key
+        pk = project_key or settings.default_project_key
         it = issue_types or ["Story", "Bug"]
         logger.info(
             f"Fetching incremental issues for {pk} since {last_sync_time}"

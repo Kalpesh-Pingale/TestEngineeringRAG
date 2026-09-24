@@ -218,7 +218,7 @@ today, and the retrieval changes are far easier to validate against one corpus.
 ## Phase 3 — Multi-Project Support (Est. 3–4 days)
 
 > **Partially shipped.** Items 2 and 3 below are implemented for the common case
-> of several projects on one Jira workspace/account: `JIRA_PROJECT_KEYS` configures
+> of several projects on one Jira workspace/account: `JIRA_PROJECT_KEY` (comma-separated) configures
 > them, sync metadata is tracked per project, `VectorStore` filters/deletes by
 > `project_key` metadata (one shared collection, not yet per-project storage), and
 > RAG context stays scoped to the target issue's own project. Items 1 (physically

@@ -13,9 +13,8 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 @router.get("/")
 async def get_config() -> Dict[str, Any]:
     return {
-        "jira_project_key": settings.jira_project_key,
+        "jira_project_key": settings.default_project_key,
         "jira_project_keys": settings.project_keys,
-        "default_project_key": settings.default_project_key,
         "jira_base_url": settings.jira_base_url,
         "jira_use_mcp": settings.jira_use_mcp,
         "testrail_base_url": settings.testrail_base_url,
